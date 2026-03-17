@@ -1,0 +1,26 @@
+{
+  "families": {
+    "Inter-Light": "Inter-Light",
+    "Inter-Regular": "Inter-Regular",
+    "Inter-Medium": "Inter-Medium",
+    "Inter-SemiBold": "Inter-SemiBold",
+    "Inter-Bold": "Inter-Bold"
+  },
+  "weights": {
+    "light": "300",
+    "regular": "400",
+    "medium": "500",
+    "semiBold": "600",
+    "bold": "700"
+  },
+  "sizes": {
+    "caption": 10,
+    "small": 12,
+    "body": 14,
+    "bodyLarge": 16,
+    "subtitle": 18,
+    "title": 20,
+    "heading": 24,
+    "display": 32
+  }
+}

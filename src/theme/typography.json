@@ -1,0 +1,37 @@
+{
+  "fontFamily": {
+    "regular": "Inter-Regular",
+    "medium": "Inter-Medium",
+    "semiBold": "Inter-SemiBold",
+    "bold": "Inter-Bold",
+    "light": "Inter-Light"
+  },
+  "fontSize": {
+    "xs": 10,
+    "sm": 12,
+    "md": 14,
+    "base": 16,
+    "lg": 18,
+    "xl": 20,
+    "xxl": 24,
+    "xxxl": 28,
+    "display": 32
+  },
+  "lineHeight": {
+    "xs": 14,
+    "sm": 16,
+    "md": 20,
+    "base": 24,
+    "lg": 26,
+    "xl": 28,
+    "xxl": 32,
+    "xxxl": 36,
+    "display": 40
+  },
+  "letterSpacing": {
+    "tight": -0.5,
+    "normal": 0,
+    "wide": 0.5,
+    "wider": 1
+  }
+}

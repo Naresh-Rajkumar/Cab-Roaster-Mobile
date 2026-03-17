@@ -1,0 +1,544 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../theme/ThemeProvider';
+import { SCREENS } from '../../constants';
+import spacing from '../../theme/spacing.json';
+import typography from '../../theme/typography.json';
+
+const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+
+const RequestCabStep2Screen = ({ navigation }) => {
+  const { theme } = useTheme();
+  const colors = theme.colors;
+
+  const [shiftTiming] = useState('10:00AM - 7:00PM');
+  const [selectedDays, setSelectedDays] = useState(['Mon', 'Wed', 'Thu', 'Fri']);
+  const [submitted, setSubmitted] = useState(false);
+
+  const selectAll = selectedDays.length === ALL_DAYS.length;
+
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedDays([]);
+    } else {
+      setSelectedDays([...ALL_DAYS]);
+    }
+  };
+
+  const handleDayToggle = (day) => {
+    if (selectedDays.includes(day)) {
+      setSelectedDays(selectedDays.filter((d) => d !== day));
+    } else {
+      setSelectedDays([...selectedDays, day]);
+    }
+  };
+
+  const handleSendRequest = () => {
+    setSubmitted(true);
+    Alert.alert(
+      'Request Submitted!',
+      'Your cab scheduling request has been submitted successfully.',
+      [
+        {
+          text: 'OK',
+          onPress: () => navigation.navigate(SCREENS.HOME),
+        },
+      ]
+    );
+  };
+
+  const handleBack = () => {
+    navigation.goBack();
+  };
+
+  // Split days into rows: first row 3 items, second row 2 items
+  const row1 = ALL_DAYS.slice(0, 3);
+  const row2 = ALL_DAYS.slice(3);
+
+  return (
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['bottom']}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <View
+            style={[styles.avatarCircle, { backgroundColor: colors.primary }]}
+          >
+            <Text style={styles.avatarText}>R</Text>
+          </View>
+          <View style={styles.greetingContainer}>
+            <Text
+              style={[
+                styles.greetingText,
+                {
+                  color: colors.textSecondary,
+                  fontFamily: typography.fontFamily.regular,
+                },
+              ]}
+            >
+              Good Morning,
+            </Text>
+            <Text
+              style={[
+                styles.greetingName,
+                {
+                  color: colors.text,
+                  fontFamily: typography.fontFamily.semiBold,
+                },
+              ]}
+            >
+              Ragha!
+            </Text>
+          </View>
+        </View>
+
+        {/* Title + Step Indicator */}
+        <View style={styles.titleRow}>
+          <Text
+            style={[
+              styles.titleText,
+              {
+                color: colors.text,
+                fontFamily: typography.fontFamily.bold,
+              },
+            ]}
+          >
+            Ride Scheduling Setup
+          </Text>
+          <Text
+            style={[
+              styles.stepIndicator,
+              {
+                color: colors.textSecondary,
+                fontFamily: typography.fontFamily.medium,
+              },
+            ]}
+          >
+            1 of 2
+          </Text>
+        </View>
+
+        {/* Progress Bar */}
+        <View
+          style={[styles.progressBarTrack, { backgroundColor: colors.border }]}
+        >
+          <View
+            style={[
+              styles.progressBarFill,
+              { backgroundColor: colors.primary, width: '60%' },
+            ]}
+          />
+        </View>
+
+        {/* Shift Timing Section */}
+        <View style={styles.sectionContainer}>
+          <Text
+            style={[
+              styles.sectionLabel,
+              {
+                color: colors.text,
+                fontFamily: typography.fontFamily.semiBold,
+              },
+            ]}
+          >
+            Shift Timing{' '}
+            <Text style={{ color: colors.primary }}>*</Text>
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.dropdownButton,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.dropdownValue,
+                {
+                  color: colors.text,
+                  fontFamily: typography.fontFamily.medium,
+                },
+              ]}
+            >
+              {shiftTiming}
+            </Text>
+            <Ionicons
+              name="chevron-down"
+              size={spacing.iconSize.md}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Working Days Section */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.workingDaysHeader}>
+            <Text
+              style={[
+                styles.sectionLabel,
+                {
+                  color: colors.text,
+                  fontFamily: typography.fontFamily.semiBold,
+                },
+              ]}
+            >
+              Working Days{' '}
+              <Text style={{ color: colors.primary }}>*</Text>
+            </Text>
+            <TouchableOpacity
+              style={styles.selectAllRow}
+              onPress={handleSelectAll}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.selectAllText,
+                  {
+                    color: colors.textSecondary,
+                    fontFamily: typography.fontFamily.medium,
+                  },
+                ]}
+              >
+                Select All
+              </Text>
+              <View
+                style={[
+                  styles.checkbox,
+                  {
+                    borderColor: selectAll ? colors.primary : '#E5E7EB',
+                    backgroundColor: selectAll ? colors.primary : colors.surface,
+                  },
+                ]}
+              >
+                {selectAll && (
+                  <Ionicons
+                    name="checkmark"
+                    size={12}
+                    color="#FFFFFF"
+                  />
+                )}
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Day cards row 1 */}
+          <View style={styles.daysRow}>
+            {row1.map((day) => {
+              const isSelected = selectedDays.includes(day);
+              return (
+                <TouchableOpacity
+                  key={day}
+                  onPress={() => handleDayToggle(day)}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.dayCard,
+                    {
+                      backgroundColor: isSelected ? '#EDE7FB' : colors.surface,
+                      borderColor: isSelected ? colors.primary : '#E5E7EB',
+                    },
+                  ]}
+                >
+                  {isSelected && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={spacing.iconSize.sm}
+                      color={colors.primary}
+                      style={styles.dayCheckmark}
+                    />
+                  )}
+                  <Text
+                    style={[
+                      styles.dayLabel,
+                      {
+                        color: isSelected ? colors.primary : colors.text,
+                        fontFamily: isSelected
+                          ? typography.fontFamily.semiBold
+                          : typography.fontFamily.medium,
+                      },
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Day cards row 2 */}
+          <View style={styles.daysRow}>
+            {row2.map((day) => {
+              const isSelected = selectedDays.includes(day);
+              return (
+                <TouchableOpacity
+                  key={day}
+                  onPress={() => handleDayToggle(day)}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.dayCard,
+                    {
+                      backgroundColor: isSelected ? '#EDE7FB' : colors.surface,
+                      borderColor: isSelected ? colors.primary : '#E5E7EB',
+                    },
+                  ]}
+                >
+                  {isSelected && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={spacing.iconSize.sm}
+                      color={colors.primary}
+                      style={styles.dayCheckmark}
+                    />
+                  )}
+                  <Text
+                    style={[
+                      styles.dayLabel,
+                      {
+                        color: isSelected ? colors.primary : colors.text,
+                        fontFamily: isSelected
+                          ? typography.fontFamily.semiBold
+                          : typography.fontFamily.medium,
+                      },
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Bottom Buttons — sticky footer */}
+      <View
+        style={[
+          styles.bottomButtons,
+          { borderTopColor: colors.border, backgroundColor: colors.background },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={handleBack}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              styles.backButtonText,
+              {
+                color: colors.text,
+                fontFamily: typography.fontFamily.semiBold,
+              },
+            ]}
+          >
+            ← Back
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.sendButton,
+            { backgroundColor: colors.primary },
+          ]}
+          onPress={handleSendRequest}
+          activeOpacity={0.8}
+        >
+          <Text
+            style={[
+              styles.sendButtonText,
+              { fontFamily: typography.fontFamily.semiBold },
+            ]}
+          >
+            Send Request →
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: spacing.base,
+    paddingBottom: spacing.xl,
+  },
+
+  // Header
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: typography.fontSize.base,
+    fontFamily: 'Inter-Bold',
+  },
+  greetingContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 4,
+  },
+  greetingText: {
+    fontSize: typography.fontSize.md,
+  },
+  greetingName: {
+    fontSize: typography.fontSize.md,
+  },
+
+  // Title + Step
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  titleText: {
+    fontSize: typography.fontSize.xl,
+  },
+  stepIndicator: {
+    fontSize: typography.fontSize.sm,
+  },
+
+  // Progress bar
+  progressBarTrack: {
+    height: 8,
+    borderRadius: spacing.borderRadius.full,
+    marginBottom: spacing.xl,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: spacing.borderRadius.full,
+  },
+
+  // Section
+  sectionContainer: {
+    marginBottom: spacing.lg,
+  },
+  sectionLabel: {
+    fontSize: typography.fontSize.md,
+    marginBottom: spacing.sm,
+  },
+
+  // Dropdown
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1.5,
+    borderRadius: spacing.borderRadius.md,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+  },
+  dropdownValue: {
+    fontSize: typography.fontSize.md,
+  },
+
+  // Working Days
+  workingDaysHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  selectAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  selectAllText: {
+    fontSize: typography.fontSize.sm,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: spacing.borderRadius.xs,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Day cards
+  daysRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  dayCard: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    borderRadius: spacing.borderRadius.md,
+    borderWidth: 1.5,
+    position: 'relative',
+    minHeight: 52,
+  },
+  dayCheckmark: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+  },
+  dayLabel: {
+    fontSize: typography.fontSize.sm,
+  },
+
+  // Bottom buttons
+  bottomButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+  },
+  backButton: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonText: {
+    fontSize: typography.fontSize.md,
+  },
+  sendButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: spacing.borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonText: {
+    color: '#FFFFFF',
+    fontSize: typography.fontSize.md,
+  },
+});
+
+export default RequestCabStep2Screen;
