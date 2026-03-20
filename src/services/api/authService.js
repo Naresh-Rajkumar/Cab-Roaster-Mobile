@@ -12,8 +12,17 @@ import { mockAuthService } from '../mock/mockAuthService';
 import axiosInstance from '../axiosConfig';
 
 const realAuthService = {
+  // Microsoft SSO — exchanges auth code for tokens
+  microsoftLogin: (data) => axiosInstance.post('/auth/microsoft', data),
+
+  // Dev/test login with email + password
+  employeeLogin: (credentials) => axiosInstance.post('/auth/employee-login', credentials),
+
+  // Legacy OTP flow
   login: (credentials) => axiosInstance.post('/auth/login', credentials),
   verifyOTP: (phone, otp, role) => axiosInstance.post('/auth/verify-otp', { phone, otp, role }),
+
+  // Token management
   refreshToken: (token) => axiosInstance.post('/auth/refresh', { refreshToken: token }),
   logout: () => axiosInstance.post('/auth/logout'),
   getProfile: () => axiosInstance.get('/auth/profile'),

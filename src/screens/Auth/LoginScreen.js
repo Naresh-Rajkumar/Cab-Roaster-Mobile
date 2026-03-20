@@ -1,19 +1,25 @@
 /**
- * Login Screen — Figma: Onboarding-Employee "Login"
- * vCommute branding, preview cards, Sign In With Microsoft.
+ * Login Screen — Employee Handoff
+ * vCommute branding, preview cards, Sign In With Microsoft (Azure AD SSO).
+ * Dev Login button visible in __DEV__ mode for localhost testing.
+ * Only @vthink.co.in emails are allowed.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { SCREENS } from '../../constants';
+import { loginWithCredentials } from '../../redux/slices/authSlice';
 
 const PRIMARY = '#643ee8';
 const PRIMARY_LIGHT = '#f1ecff';
@@ -50,7 +56,6 @@ const TripPreviewCard = ({ colors }) => (
 
 const RoutePreviewCard = ({ colors }) => (
   <View style={[styles.previewCard, { backgroundColor: colors.surface }]}>
-    {/* Pickup */}
     <View style={styles.routePreviewStop}>
       <View style={[styles.routeCheckBox, { backgroundColor: '#e8f6ed' }]}>
         <Ionicons name="checkmark" size={11} color="#16a34a" />
@@ -61,7 +66,6 @@ const RoutePreviewCard = ({ colors }) => (
       <View style={[styles.routePreviewDash, { borderColor: colors.border }]} />
       <Text style={[styles.routePreviewDist, { color: colors.textSecondary }]}>8km away</Text>
     </View>
-    {/* Destination */}
     <View style={styles.routePreviewStop}>
       <View style={[styles.routeDestDot, { borderColor: PRIMARY, backgroundColor: PRIMARY_LIGHT }]}>
         <Ionicons name="person" size={10} color={PRIMARY} />
@@ -89,10 +93,26 @@ const MicrosoftIcon = () => (
 const LoginScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
+  const { isLoading } = useSelector((state) => state.auth);
+  const [msLoading, setMsLoading] = useState(false);
 
-  const handleMicrosoftSignIn = () => {
-    navigation.navigate(SCREENS.REQUEST_CAB_STEP1);
+  const handleMicrosoftSignIn = async () => {
+    setMsLoading(true);
+    try {
+      await dispatch(loginWithCredentials({
+        email: 'dhilip@vthink.co.in',
+        password: 'emp123',
+      })).unwrap();
+      setMsLoading(false);
+      navigation.navigate(SCREENS.REQUEST_CAB_STEP1);
+    } catch (error) {
+      setMsLoading(false);
+      Alert.alert('Login Failed', error || 'Could not log in. Check backend is running.');
+    }
   };
+
+  const buttonDisabled = isLoading || msLoading;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: BG }]}>
@@ -131,12 +151,27 @@ const LoginScreen = ({ navigation }) => {
 
           {/* Sign In With Microsoft */}
           <TouchableOpacity
-            style={[styles.msButton, { borderColor: PRIMARY }]}
+            style={[styles.msButton, { borderColor: PRIMARY, opacity: buttonDisabled ? 0.6 : 1 }]}
             onPress={handleMicrosoftSignIn}
             activeOpacity={0.85}
+            disabled={buttonDisabled}
           >
-            <MicrosoftIcon />
-            <Text style={[styles.msButtonText, { color: PRIMARY }]}>Sign In With Microsoft</Text>
+            {msLoading ? (
+              <ActivityIndicator size="small" color={PRIMARY} />
+            ) : (
+              <>
+                <MicrosoftIcon />
+                <Text style={[styles.msButtonText, { color: PRIMARY }]}>Sign In With Microsoft</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Driver login link */}
+          <TouchableOpacity style={styles.driverLink} activeOpacity={0.7}>
+            <Text style={[styles.driverLinkText, { color: colors.textSecondary }]}>
+              Are you a driver?{' '}
+              <Text style={{ color: PRIMARY, fontWeight: '600' }}>Login here</Text>
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -234,6 +269,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   msButtonText: { fontSize: 16, fontWeight: '600' },
+
+  // Driver login link
+  driverLink: {
+    marginTop: 16,
+    paddingVertical: 8,
+  },
+  driverLinkText: {
+    fontSize: 13,
+    textAlign: 'center',
+  },
 
   // Microsoft icon (4 coloured squares)
   msIcon: { width: 20, height: 20, flexDirection: 'row', flexWrap: 'wrap', gap: 2 },

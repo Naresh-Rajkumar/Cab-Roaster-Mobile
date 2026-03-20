@@ -15,6 +15,7 @@ import { fetchCurrentRide } from '../../redux/slices/tripSlice';
 import { Avatar, StatusBadge } from '../../components';
 import { SCREENS } from '../../constants';
 import { getGreeting } from '../../utils';
+import CabMapView from '../../components/CabMapView';
 
 const SCHEDULE = [
   { id: 's1', label: 'Ride to Office', time: '9:30 AM', status: 'completed' },
@@ -22,6 +23,15 @@ const SCHEDULE = [
 ];
 
 const QUICK_ACTIONS = [
+  {
+    id: 'new_request',
+    label: 'New Cab\nRequest',
+    iconName: 'car',
+    badgeIcon: 'add-circle',
+    badgeColor: '#643ee8',
+    iconBg: '#f1ecff',
+    screen: SCREENS.REQUEST_CAB_STEP1,
+  },
   {
     id: 'cancel',
     label: 'Request\nCancellation',
@@ -63,34 +73,47 @@ const RECENT_ACTIVITY = [
   },
 ];
 
-// ─── Map Placeholder ──────────────────────────────────────────────────────────
-const MapPlaceholder = ({ colors }) => (
-  <View style={[styles.mapPlaceholder, { backgroundColor: '#e8eaed' }]}>
-    {/* Simulated map roads */}
-    <View style={styles.mapRoadH} />
-    <View style={styles.mapRoadV} />
-    {/* Route line */}
-    <View style={styles.mapRouteLine} />
-    {/* Pickup dot */}
-    <View style={[styles.mapDotPickup, { backgroundColor: '#16a34a', borderColor: '#fff' }]} />
-    {/* Car icon */}
-    <View style={[styles.mapCarBox, { backgroundColor: colors.primaryContainer, borderColor: colors.primary }]}>
-      <Ionicons name="car" size={14} color={colors.primary} />
-    </View>
-    {/* Destination dot */}
-    <View style={[styles.mapDotDest, { backgroundColor: colors.primary, borderColor: '#fff' }]} />
-    {/* Location label */}
-    <View style={[styles.mapLabel, { backgroundColor: '#fff' }]}>
-      <Text style={styles.mapLabelText}>Karapakkam</Text>
-    </View>
-  </View>
-);
+// ─── Map Component ───────────────────────────────────────────────────────────
+const RideMapView = ({ currentRide }) => {
+  const pickupCoord = { latitude: 12.9278, longitude: 80.2278 };
+  const dropCoord = { latitude: 12.9010, longitude: 80.2279 };
+
+  const markers = [
+    {
+      id: 'pickup',
+      coordinate: pickupCoord,
+      title: currentRide?.pickup || 'Karapakkam',
+      type: 'pickup',
+    },
+    {
+      id: 'drop',
+      coordinate: dropCoord,
+      title: currentRide?.dropoff || 'Sholinganallur',
+      type: 'drop',
+    },
+  ];
+
+  return (
+    <CabMapView
+      markers={markers}
+      polylineCoords={[pickupCoord, dropCoord]}
+      initialRegion={{
+        latitude: 12.9150,
+        longitude: 80.2278,
+        latitudeDelta: 0.04,
+        longitudeDelta: 0.04,
+      }}
+      style={styles.mapPlaceholder}
+      fitToMarkers
+    />
+  );
+};
 
 // ─── Today's Ride Card ────────────────────────────────────────────────────────
 const TodayRideCard = ({ currentRide, colors, onTrack }) => (
   <View style={[styles.rideCard, { backgroundColor: colors.surface }]}>
     {/* Map thumbnail */}
-    <MapPlaceholder colors={colors} />
+    <RideMapView currentRide={currentRide} />
 
     {/* Route */}
     <View style={styles.routeBlock}>
@@ -320,85 +343,13 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: 16, marginBottom: 16 },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
 
-  // Map placeholder
+  // Map
   mapPlaceholder: {
     height: 160,
     borderRadius: 12,
     marginBottom: 14,
     overflow: 'hidden',
-    position: 'relative',
   },
-  mapRoadH: {
-    position: 'absolute',
-    height: 8,
-    top: '50%',
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    opacity: 0.6,
-  },
-  mapRoadV: {
-    position: 'absolute',
-    width: 8,
-    left: '45%',
-    top: 0,
-    bottom: 0,
-    backgroundColor: '#fff',
-    opacity: 0.6,
-  },
-  mapRouteLine: {
-    position: 'absolute',
-    width: 3,
-    left: '38%',
-    top: '10%',
-    bottom: '25%',
-    backgroundColor: '#4f46e5',
-    borderRadius: 2,
-    borderStyle: 'dashed',
-  },
-  mapDotPickup: {
-    position: 'absolute',
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 2,
-    top: '10%',
-    left: '37%',
-  },
-  mapCarBox: {
-    position: 'absolute',
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    top: '35%',
-    left: '34%',
-  },
-  mapDotDest: {
-    position: 'absolute',
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 2,
-    bottom: '25%',
-    left: '37%',
-  },
-  mapLabel: {
-    position: 'absolute',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    bottom: '30%',
-    left: '43%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  mapLabelText: { fontSize: 10, fontWeight: '600', color: '#1a1a2e' },
 
   // Ride card
   rideCard: {

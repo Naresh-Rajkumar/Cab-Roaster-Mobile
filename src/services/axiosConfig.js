@@ -2,8 +2,8 @@ import axios from 'axios';
 import { API_TIMEOUT } from '../constants';
 
 const API_BASE_URL = __DEV__
-  ? 'http://localhost:3000/api'
-  : 'https://api.cabroster.com/api';
+  ? 'http://localhost:4000/api'
+  : 'https://api.vcommute.com/api';
 
 const axiosInstance = axios.create({
   baseURL: API_BASE_URL,

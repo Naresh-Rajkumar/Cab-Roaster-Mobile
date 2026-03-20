@@ -1,8 +1,10 @@
 /**
- * Live Tracking Screen — Figma: Employee Handoff 09/02/2026 "Track Location"
+ * Live Tracking Screen — Employee Handoff
+ * Real MapView with Socket.IO live cab tracking.
  * Two states: map + minimal panel, and expanded ride-detail sheet.
+ * Camera follows cab with Google Maps-style 3D perspective.
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,14 +14,18 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Avatar } from '../../components';
 import { SCREENS } from '../../constants';
-import { MOCK_ROUTE_STOPS } from '../../services/mock/mockData';
+import CabMapView from '../../components/CabMapView';
+import { useTrackingSocket } from '../../hooks/useTrackingSocket';
+import { fetchRouteCoordinates } from '../../services/routeService';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
-const MOCK_RIDE = {
+// Fallback data when no real ride is loaded
+const DEFAULT_RIDE = {
   tripNumber: 'Trip #482',
   vehicleNo: 'TN 14 CV 3755',
   vehicleType: 'Ertiga',
@@ -28,63 +34,73 @@ const MOCK_RIDE = {
   nextStop: 'Sholinganallur',
   eta: '15 mins',
   currentLocation: 'Chennai One IT SEZ',
-  currentAddress: '200 Feet Radial Road, MCN Nagar Extension, Pallavaram, Thoraipakkam, Tamilnadu',
+  currentAddress: '200 Feet Radial Road, MCN Nagar Extension, Pallavaram, Thoraipakkam',
 };
 
 const ROUTE_STOPS = [
-  { id: 's1', time: '9:30 AM', name: 'Madipakkam',    status: 'picked_up',    statusLabel: 'Picked Up',     statusColor: '#16a34a' },
-  { id: 's2', time: '9:45 AM', name: 'BSR Mall',       status: 'arriving',     statusLabel: 'Arriving Soon', statusColor: '#643ee8' },
-  { id: 's3', time: '10:15 AM', name: 'Aavin Bus Stop', status: 'pending',     statusLabel: 'Pending',       statusColor: '#9ca3af' },
-  { id: 's4', time: '10:30 AM', name: 'vThink Office',  status: 'pending',     statusLabel: 'Pending',       statusColor: '#9ca3af' },
+  { id: 's1', time: '9:30 AM', name: 'Madipakkam', status: 'picked_up', statusLabel: 'Picked Up', statusColor: '#16a34a' },
+  { id: 's2', time: '9:45 AM', name: 'BSR Mall', status: 'arriving', statusLabel: 'Arriving Soon', statusColor: '#643ee8' },
+  { id: 's3', time: '10:15 AM', name: 'Aavin Bus Stop', status: 'pending', statusLabel: 'Pending', statusColor: '#9ca3af' },
+  { id: 's4', time: '10:30 AM', name: 'vThink Office', status: 'pending', statusLabel: 'Pending', statusColor: '#9ca3af' },
 ];
 
-// ─── Fake Map Render ──────────────────────────────────────────────────────────
-const FakeMap = ({ colors }) => (
-  <View style={[styles.mapView, { backgroundColor: '#d1d5db' }]}>
-    {/* Base road grid */}
-    {[20, 38, 55, 72].map((top) => (
-      <View key={`h${top}`} style={[styles.mapRoadH, { top: `${top}%`, backgroundColor: '#e5e7eb' }]} />
-    ))}
-    {[25, 48, 68].map((left) => (
-      <View key={`v${left}`} style={[styles.mapRoadV, { left: `${left}%`, backgroundColor: '#e5e7eb' }]} />
-    ))}
-    {/* Route line - solid green (completed) */}
-    <View style={styles.routeSolidLine} />
-    {/* Route line - dashed purple (remaining) */}
-    {[0, 14, 28, 42, 56, 70].map((top) => (
-      <View key={`d${top}`} style={[styles.routeDashSegment, { top: `${top + 30}%` }]} />
-    ))}
-    {/* Pickup dot */}
-    <View style={[styles.mapPickupDot, { backgroundColor: '#16a34a', borderColor: '#fff' }]} />
-    {/* Car marker */}
-    <View style={[styles.mapCarMarker, { backgroundColor: colors.primaryContainer, borderColor: colors.primary }]}>
-      <Ionicons name="car" size={18} color={colors.primary} />
-    </View>
-    {/* ETA badge on route */}
-    <View style={[styles.routeEtaBadge, { backgroundColor: colors.primary }]}>
-      <View style={[styles.routeEtaDot, { backgroundColor: '#fff' }]} />
-      <Text style={styles.routeEtaText}>15 mins</Text>
-    </View>
-    {/* Lower ETA badge */}
-    <View style={[styles.routeEtaBadge2, { backgroundColor: colors.primary }]}>
-      <View style={[styles.routeEtaDot, { backgroundColor: '#fff' }]} />
-      <Text style={styles.routeEtaText}>25 mins</Text>
-    </View>
-    {/* Dest dot */}
-    <View style={[styles.mapDestDot, { backgroundColor: colors.primary, borderColor: '#fff' }]} />
-  </View>
-);
+// Stop coordinates for map markers
+const STOP_COORDS = [
+  { latitude: 12.9637, longitude: 80.1991 }, // Madipakkam
+  { latitude: 12.9600, longitude: 80.2030 }, // BSR Mall
+  { latitude: 12.9823, longitude: 80.2185 }, // Aavin Bus Stop
+  { latitude: 12.9010, longitude: 80.2279 }, // vThink Office
+];
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
-const LiveTrackingScreen = ({ navigation, route }) => {
+const LiveTrackingScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [showDetails, setShowDetails] = useState(false);
+  const [followCab, setFollowCab] = useState(true);
+  const [completedRoute, setCompletedRoute] = useState([]);
+  const [remainingRoute, setRemainingRoute] = useState([]);
+
+  const token = useSelector((state) => state.auth.token);
+  const currentRide = useSelector((state) => state.trip.currentRide);
+  const ride = currentRide || DEFAULT_RIDE;
+
+  // Connect to Socket.IO for live tracking
+  const { connected, cabPosition, trail, speed, heading, watchCab } = useTrackingSocket(token);
+
+  // Watch the specific cab for this ride
+  useEffect(() => {
+    if (connected && ride.vehicleNo) {
+      watchCab(ride.vehicleNo);
+    }
+  }, [connected, ride.vehicleNo, watchCab]);
+
+  // Fetch road-following route polylines from OSRM on mount
+  useEffect(() => {
+    fetchRouteCoordinates([STOP_COORDS[0], STOP_COORDS[1]])
+      .then(setCompletedRoute);
+    fetchRouteCoordinates([STOP_COORDS[1], STOP_COORDS[2], STOP_COORDS[3]])
+      .then(setRemainingRoute);
+  }, []);
+
+  // Build map markers from route stops
+  const markers = ROUTE_STOPS.map((stop, idx) => ({
+    id: stop.id,
+    coordinate: STOP_COORDS[idx],
+    title: stop.name,
+    description: stop.statusLabel,
+    type: idx === ROUTE_STOPS.length - 1 ? 'drop' : (stop.status === 'picked_up' ? 'pickup' : 'stop'),
+  }));
+
+  // Cab position from socket or fallback
+  const cabPos = cabPosition || {
+    latitude: 12.9550,
+    longitude: 80.2050,
+  };
 
   return (
     <View style={styles.container}>
       {/* Header overlay on map */}
-      <View style={[styles.header]}>
+      <View style={styles.header}>
         <TouchableOpacity
           style={[styles.headerBtn, { backgroundColor: '#fff' }]}
           onPress={() => navigation.goBack()}
@@ -92,11 +108,55 @@ const LiveTrackingScreen = ({ navigation, route }) => {
           <Ionicons name="arrow-back" size={20} color="#1a1a2e" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Live Tracking</Text>
-        <View style={{ width: 40 }} />
+        {connected ? (
+          <View style={styles.connectedDot} />
+        ) : (
+          <View style={styles.disconnectedDot} />
+        )}
+        {/* Re-center / follow toggle button */}
+        <TouchableOpacity
+          style={[
+            styles.headerBtn,
+            { backgroundColor: followCab ? '#643ee8' : '#fff' },
+          ]}
+          onPress={() => setFollowCab((prev) => !prev)}
+        >
+          <Ionicons
+            name="navigate"
+            size={18}
+            color={followCab ? '#fff' : '#1a1a2e'}
+          />
+        </TouchableOpacity>
       </View>
 
-      {/* Map */}
-      <FakeMap colors={colors} />
+      {/* Offline banner */}
+      {!connected && (
+        <View style={styles.offlineBanner}>
+          <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
+          <Text style={styles.offlineBannerText}>Connecting to live tracking...</Text>
+        </View>
+      )}
+
+      {/* Real Map */}
+      <CabMapView
+        markers={markers}
+        completedPolylineCoords={completedRoute}
+        polylineCoords={remainingRoute}
+        cabPosition={cabPos}
+        cabHeading={heading}
+        cabSpeed={speed}
+        trailCoords={trail}
+        followCab={followCab}
+        showSpeedBadge={connected && speed > 0}
+        initialRegion={{
+          latitude: 12.9400,
+          longitude: 80.2100,
+          latitudeDelta: 0.08,
+          longitudeDelta: 0.08,
+        }}
+        style={styles.mapView}
+        fitToMarkers={!followCab}
+      />
 
       {/* Bottom Panel */}
       {!showDetails ? (
@@ -114,11 +174,11 @@ const LiveTrackingScreen = ({ navigation, route }) => {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.nextStopLabel, { color: colors.textSecondary }]}>Next Stop</Text>
-              <Text style={[styles.nextStopName, { color: colors.text }]}>{MOCK_RIDE.nextStop}</Text>
+              <Text style={[styles.nextStopName, { color: colors.text }]}>{ride.nextStop}</Text>
             </View>
             <View style={[styles.etaBadge, { backgroundColor: colors.primaryContainer }]}>
               <View style={[styles.etaDot, { backgroundColor: colors.primary }]} />
-              <Text style={[styles.etaText, { color: colors.primary }]}>{MOCK_RIDE.eta}</Text>
+              <Text style={[styles.etaText, { color: colors.primary }]}>{ride.eta}</Text>
             </View>
           </TouchableOpacity>
 
@@ -126,13 +186,13 @@ const LiveTrackingScreen = ({ navigation, route }) => {
 
           {/* Driver row */}
           <View style={styles.driverRow}>
-            <Avatar name={MOCK_RIDE.driverName} size={44} />
+            <Avatar name={ride.driverName} size={44} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.driverName, { color: colors.text }]}>{MOCK_RIDE.driverName}</Text>
+              <Text style={[styles.driverName, { color: colors.text }]}>{ride.driverName}</Text>
               <Text style={[styles.vehicleText, { color: colors.textSecondary }]}>
-                {MOCK_RIDE.vehicleNo}{' '}
+                {ride.vehicleNo}{' '}
                 <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
-                {MOCK_RIDE.vehicleType}
+                {ride.vehicleType}
               </Text>
             </View>
             <TouchableOpacity style={[styles.callBtn, { borderColor: colors.borderLight }]}>
@@ -155,11 +215,11 @@ const LiveTrackingScreen = ({ navigation, route }) => {
           {/* Trip meta */}
           <View style={styles.tripMeta}>
             <View>
-              <Text style={[styles.tripNumber, { color: colors.text }]}>{MOCK_RIDE.tripNumber}</Text>
+              <Text style={[styles.tripNumber, { color: colors.text }]}>{ride.tripNumber}</Text>
               <Text style={[styles.vehicleText, { color: colors.textSecondary }]}>
-                {MOCK_RIDE.vehicleNo}{' '}
+                {ride.vehicleNo}{' '}
                 <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
-                {MOCK_RIDE.vehicleType}
+                {ride.vehicleType}
               </Text>
             </View>
             <View style={[styles.activeBadge, { backgroundColor: '#dcfce7' }]}>
@@ -204,8 +264,8 @@ const LiveTrackingScreen = ({ navigation, route }) => {
                           <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
                           <Text style={[styles.currentLocLabel, { color: colors.textSecondary }]}>Current Location</Text>
                         </View>
-                        <Text style={[styles.currentLocName, { color: colors.text }]}>{MOCK_RIDE.currentLocation}</Text>
-                        <Text style={[styles.currentLocAddress, { color: colors.textSecondary }]}>{MOCK_RIDE.currentAddress}</Text>
+                        <Text style={[styles.currentLocName, { color: colors.text }]}>{ride.currentLocation}</Text>
+                        <Text style={[styles.currentLocAddress, { color: colors.textSecondary }]}>{ride.currentAddress}</Text>
                         <TouchableOpacity
                           style={[styles.trackBtn, { backgroundColor: colors.primary }]}
                           onPress={() => navigation.navigate(SCREENS.CAB_ARRIVED)}
@@ -224,13 +284,13 @@ const LiveTrackingScreen = ({ navigation, route }) => {
             {/* Driver footer */}
             <View style={[styles.divider, { backgroundColor: colors.borderLight, marginVertical: 12 }]} />
             <View style={styles.driverRow}>
-              <Avatar name={MOCK_RIDE.driverName} size={44} />
+              <Avatar name={ride.driverName} size={44} />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.driverName, { color: colors.text }]}>{MOCK_RIDE.driverName}</Text>
+                <Text style={[styles.driverName, { color: colors.text }]}>{ride.driverName}</Text>
                 <Text style={[styles.vehicleText, { color: colors.textSecondary }]}>
-                  {MOCK_RIDE.vehicleNo}{' '}
+                  {ride.vehicleNo}{' '}
                   <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
-                  {MOCK_RIDE.vehicleType}
+                  {ride.vehicleType}
                 </Text>
               </View>
               <TouchableOpacity style={[styles.callBtn, { borderColor: colors.borderLight }]}>
@@ -273,89 +333,51 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   headerTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '700', color: '#1a1a2e' },
+  connectedDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#22C55E',
+    marginRight: 8,
+  },
+  disconnectedDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+    marginRight: 8,
+  },
+
+  // Offline banner
+  offlineBanner: {
+    position: 'absolute',
+    top: 102,
+    left: 16,
+    right: 16,
+    zIndex: 10,
+    backgroundColor: '#EF4444',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  offlineBannerText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
 
   // Map
   mapView: {
     flex: 1,
-    position: 'relative',
-  },
-  mapRoadH: { position: 'absolute', left: 0, right: 0, height: 10 },
-  mapRoadV: { position: 'absolute', top: 0, bottom: 0, width: 10 },
-  routeSolidLine: {
-    position: 'absolute',
-    width: 4,
-    left: '48%',
-    top: '8%',
-    height: '22%',
-    backgroundColor: '#16a34a',
-    borderRadius: 2,
-  },
-  routeDashSegment: {
-    position: 'absolute',
-    width: 4,
-    left: '48%',
-    height: 12,
-    backgroundColor: '#643ee8',
-    borderRadius: 2,
-    opacity: 0.8,
-  },
-  mapPickupDot: {
-    position: 'absolute',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 3,
-    top: '6%',
-    left: '46.5%',
-  },
-  mapCarMarker: {
-    position: 'absolute',
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    top: '25%',
-    left: '43%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  routeEtaBadge: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 20,
-    top: '40%',
-    left: '53%',
-    gap: 4,
-  },
-  routeEtaBadge2: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 20,
-    top: '62%',
-    left: '53%',
-    gap: 4,
-  },
-  routeEtaDot: { width: 6, height: 6, borderRadius: 3 },
-  routeEtaText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  mapDestDot: {
-    position: 'absolute',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 3,
-    top: '75%',
-    left: '46.5%',
+    borderRadius: 0,
   },
 
   // Bottom panel

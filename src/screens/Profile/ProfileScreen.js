@@ -15,13 +15,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
+import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../theme/ThemeProvider';
 import { logout } from '../../redux/slices/authSlice';
 import { Avatar } from '../../components';
+import { SCREENS } from '../../constants';
 
 const GENERAL_ITEMS = [
   { id: 'personal', label: 'Personal Information', icon: 'person-circle-outline' },
   { id: 'shift',    label: 'Shift Timing',         icon: 'calendar-outline' },
+  { id: 'newrequest', label: 'New Cab Request',    icon: 'car-outline', screen: SCREENS.REQUEST_CAB_STEP1 },
 ];
 const SOS_ITEMS = [
   { id: 'safety', label: 'Safety', icon: 'shield-checkmark-outline' },
@@ -33,23 +36,34 @@ const PREF_ITEMS = [
 ];
 
 // ─── Menu Row ─────────────────────────────────────────────────────────────────
-const MenuRow = ({ item, value, onToggle, colors, isLast }) => (
-  <View style={[styles.menuRow, { borderBottomColor: isLast ? 'transparent' : colors.borderLight }]}>
-    <Ionicons name={item.icon} size={20} color={colors.text} style={styles.menuIcon} />
-    <Text style={[styles.menuLabel, { color: colors.text }]}>{item.label}</Text>
-    {item.toggle ? (
-      <Switch
-        value={value}
-        onValueChange={onToggle}
-        trackColor={{ false: colors.border, true: colors.primary }}
-        thumbColor="#ffffff"
-        ios_backgroundColor={colors.border}
-      />
-    ) : (
-      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-    )}
-  </View>
-);
+const MenuRow = ({ item, value, onToggle, onPress, colors, isLast }) => {
+  const content = (
+    <View style={[styles.menuRow, { borderBottomColor: isLast ? 'transparent' : colors.borderLight }]}>
+      <Ionicons name={item.icon} size={20} color={colors.text} style={styles.menuIcon} />
+      <Text style={[styles.menuLabel, { color: colors.text }]}>{item.label}</Text>
+      {item.toggle ? (
+        <Switch
+          value={value}
+          onValueChange={onToggle}
+          trackColor={{ false: colors.border, true: colors.primary }}
+          thumbColor="#ffffff"
+          ios_backgroundColor={colors.border}
+        />
+      ) : (
+        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+      )}
+    </View>
+  );
+
+  if (onPress && !item.toggle) {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
+  return content;
+};
 
 // ─── Logout Bottom Sheet ──────────────────────────────────────────────────────
 const LogoutSheet = ({ visible, onConfirm, onCancel, colors }) => (
@@ -87,6 +101,7 @@ const ProfileScreen = () => {
   const { theme, toggleTheme, isDarkMode } = useTheme();
   const colors = theme.colors;
   const dispatch = useDispatch();
+  const navigation = useNavigation();
   const user = useSelector((state) => state.auth.user);
   const [notificationsOn, setNotificationsOn] = useState(true);
   const [logoutVisible, setLogoutVisible] = useState(false);
@@ -127,6 +142,7 @@ const ProfileScreen = () => {
               item={item}
               colors={colors}
               isLast={idx === GENERAL_ITEMS.length - 1}
+              onPress={item.screen ? () => navigation.navigate(item.screen) : undefined}
             />
           ))}
         </View>

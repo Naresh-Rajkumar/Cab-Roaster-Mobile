@@ -1,11 +1,52 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { authService } from '../../services/api/authService';
+import { setAuthToken } from '../../services/axiosConfig';
 
 // ─── Thunks ───────────────────────────────────────────────────────────────────
 
 /**
- * loginUser — sends OTP to the phone number.
- * Does NOT authenticate the user yet (that happens after OTP verification).
+ * loginWithMicrosoft — exchanges Microsoft auth code for our backend tokens.
+ * Calls POST /api/auth/microsoft with { code, redirectUri }
+ */
+export const loginWithMicrosoft = createAsyncThunk(
+  'auth/loginWithMicrosoft',
+  async ({ code, redirectUri }, { rejectWithValue }) => {
+    try {
+      const response = await authService.microsoftLogin({ code, redirectUri });
+      const { user, token } = response.data;
+      // Set auth token on axios for subsequent requests
+      setAuthToken(token);
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || error.message || 'Microsoft login failed'
+      );
+    }
+  }
+);
+
+/**
+ * loginWithCredentials — dev/test login with email + password.
+ * Calls POST /api/auth/employee-login with { email, password }
+ */
+export const loginWithCredentials = createAsyncThunk(
+  'auth/loginWithCredentials',
+  async ({ email, password }, { rejectWithValue }) => {
+    try {
+      const response = await authService.employeeLogin({ email, password });
+      const { accessToken, user } = response.data.data;
+      setAuthToken(accessToken);
+      return { user, token: accessToken };
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || error.message || 'Login failed'
+      );
+    }
+  }
+);
+
+/**
+ * loginUser — sends OTP to the phone number (legacy flow).
  */
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
@@ -34,12 +75,13 @@ export const verifyOTP = createAsyncThunk(
 
 export const logoutUser = createAsyncThunk(
   'auth/logoutUser',
-  async (_, { rejectWithValue }) => {
+  async () => {
     try {
       await authService.logout();
     } catch {
       // Always allow local logout even if server call fails
     }
+    setAuthToken(null);
   }
 );
 
@@ -50,7 +92,7 @@ const authSlice = createSlice({
   initialState: {
     user: null,
     token: null,
-    role: null,         // 'employee' | 'driver' — set after OTP verified
+    role: null,         // 'employee' | 'driver' — set after auth
     pendingRole: null,  // selected on RoleSelection screen before login
     isAuthenticated: false,
     isLoading: false,
@@ -84,6 +126,42 @@ const authSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
+    // loginWithMicrosoft
+    builder
+      .addCase(loginWithMicrosoft.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(loginWithMicrosoft.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.user = action.payload.user;
+        state.token = action.payload.token;
+        state.role = action.payload.user?.role || 'employee';
+        // Don't set isAuthenticated yet — user still needs to complete cab request setup
+      })
+      .addCase(loginWithMicrosoft.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload;
+      });
+
+    // loginWithCredentials (dev login)
+    builder
+      .addCase(loginWithCredentials.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(loginWithCredentials.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.user = action.payload.user;
+        state.token = action.payload.token;
+        state.role = action.payload.user?.role || 'employee';
+        // Don't set isAuthenticated yet — user still needs to complete cab request setup
+      })
+      .addCase(loginWithCredentials.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload;
+      });
+
     // loginUser — only sends OTP, does NOT set isAuthenticated
     builder
       .addCase(loginUser.pending, (state) => {
@@ -92,7 +170,6 @@ const authSlice = createSlice({
       })
       .addCase(loginUser.fulfilled, (state) => {
         state.isLoading = false;
-        // OTP sent — wait for verifyOTP to authenticate
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;
@@ -109,7 +186,6 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.user = action.payload.user;
         state.token = action.payload.token;
-        // Use role from response, fallback to the role selected before login
         state.role = action.payload.user?.role || state.pendingRole || 'employee';
         state.isAuthenticated = true;
       })

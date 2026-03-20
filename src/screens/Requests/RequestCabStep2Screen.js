@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,14 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { setUser } from '../../redux/slices/authSlice';
+import { fetchShifts, submitCabRequest, resetForm } from '../../redux/slices/requestSlice';
 import spacing from '../../theme/spacing.json';
 import typography from '../../theme/typography.json';
 
@@ -22,10 +24,29 @@ const RequestCabStep2Screen = ({ navigation }) => {
   const colors = theme.colors;
   const dispatch = useDispatch();
 
-  const [shiftTiming] = useState('10:00AM - 7:00PM');
-  const [selectedDays, setSelectedDays] = useState(['Mon', 'Wed', 'Thu', 'Fri']);
-  const [submitted, setSubmitted] = useState(false);
+  const { shifts, isLoadingShifts, isSubmitting, formData } = useSelector((state) => state.request);
+  const user = useSelector((state) => state.auth.user);
+  const firstName = user?.firstName || user?.name?.split(' ')[0] || 'Ragha';
 
+  const [selectedShiftId, setSelectedShiftId] = useState(null);
+  const [selectedDays, setSelectedDays] = useState(['Mon', 'Wed', 'Thu', 'Fri']);
+  const [showShiftPicker, setShowShiftPicker] = useState(false);
+
+  // Fetch shifts on mount
+  useEffect(() => {
+    dispatch(fetchShifts());
+  }, [dispatch]);
+
+  // Auto-select first shift
+  useEffect(() => {
+    if (shifts.length > 0 && !selectedShiftId) {
+      // Try to select "10:00AM - 7:00PM" shift, otherwise first
+      const defaultShift = shifts.find((s) => s.timing?.includes('10:00'));
+      setSelectedShiftId(defaultShift?.id || shifts[0].id);
+    }
+  }, [shifts, selectedShiftId]);
+
+  const selectedShift = shifts.find((s) => s.id === selectedShiftId);
   const selectAll = selectedDays.length === ALL_DAYS.length;
 
   const handleSelectAll = () => {
@@ -44,9 +65,50 @@ const RequestCabStep2Screen = ({ navigation }) => {
     }
   };
 
-  const handleSendRequest = () => {
-    setSubmitted(true);
-    dispatch(setUser({ name: 'Ragha Malliga', role: 'employee', employeeId: 'VT216' }));
+  const handleSendRequest = async () => {
+    if (!selectedShiftId) {
+      Alert.alert('Missing Info', 'Please select a shift timing.');
+      return;
+    }
+    if (selectedDays.length === 0) {
+      Alert.alert('Missing Info', 'Please select at least one working day.');
+      return;
+    }
+
+    try {
+      // Build request payload matching backend POST /api/requests
+      const payload = {
+        employeeId: user?.employeeId || user?.id,
+        requestType: 'new_cab',
+        workLocationId: formData.workLocationId || 1,
+        cabUsagePreference: formData.cabUsagePreference || 'both',
+        homeLocationAddress: formData.homeLocationAddress || 'Chromepet',
+        preferredPickupStopId: formData.preferredPickupStopId,
+        preferredDropStopId: formData.preferredDropStopId || formData.preferredPickupStopId,
+        shiftId: selectedShiftId,
+        workingDays: selectedDays,
+        reason: 'New cab request from mobile app',
+      };
+
+      await dispatch(submitCabRequest(payload)).unwrap();
+
+      // Clear form data for next request
+      dispatch(resetForm());
+
+      // Set authenticated — triggers AppNavigator for first-time users
+      dispatch(setUser({
+        ...user,
+        role: user?.roleName || user?.role || 'employee',
+      }));
+
+      // Non-blocking success alert
+      Alert.alert('Success', 'Your cab request has been submitted!');
+
+      // For repeat requests (already in AppNavigator), pop back to Home
+      navigation.popToTop();
+    } catch (error) {
+      Alert.alert('Request Failed', error || 'Could not submit cab request. Please try again.');
+    }
   };
 
   const handleBack = () => {
@@ -71,7 +133,7 @@ const RequestCabStep2Screen = ({ navigation }) => {
           <View
             style={[styles.avatarCircle, { backgroundColor: colors.primary }]}
           >
-            <Text style={styles.avatarText}>R</Text>
+            <Text style={styles.avatarText}>{firstName.charAt(0).toUpperCase()}</Text>
           </View>
           <View style={styles.greetingContainer}>
             <Text
@@ -94,7 +156,7 @@ const RequestCabStep2Screen = ({ navigation }) => {
                 },
               ]}
             >
-              Ragha!
+              {firstName}!
             </Text>
           </View>
         </View>
@@ -160,6 +222,7 @@ const RequestCabStep2Screen = ({ navigation }) => {
               },
             ]}
             activeOpacity={0.7}
+            onPress={() => setShowShiftPicker(!showShiftPicker)}
           >
             <Text
               style={[
@@ -170,7 +233,7 @@ const RequestCabStep2Screen = ({ navigation }) => {
                 },
               ]}
             >
-              {shiftTiming}
+              {isLoadingShifts ? 'Loading...' : (selectedShift?.timing || 'Select shift')}
             </Text>
             <Ionicons
               name="chevron-down"
@@ -178,6 +241,39 @@ const RequestCabStep2Screen = ({ navigation }) => {
               color={colors.textSecondary}
             />
           </TouchableOpacity>
+
+          {/* Shift picker dropdown */}
+          {showShiftPicker && shifts.length > 0 && (
+            <View style={[styles.pickerList, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}>
+              {shifts.map((shift) => (
+                <TouchableOpacity
+                  key={shift.id}
+                  style={[
+                    styles.pickerItem,
+                    selectedShiftId === shift.id && { backgroundColor: '#f1ecff' },
+                  ]}
+                  onPress={() => {
+                    setSelectedShiftId(shift.id);
+                    setShowShiftPicker(false);
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.pickerItemText, { color: colors.text }]}>
+                      {shift.timing}
+                    </Text>
+                    {shift.name && (
+                      <Text style={[styles.pickerItemSub, { color: colors.textSecondary }]}>
+                        {shift.name}
+                      </Text>
+                    )}
+                  </View>
+                  {selectedShiftId === shift.id && (
+                    <Ionicons name="checkmark" size={18} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Working Days Section */}
@@ -347,19 +443,24 @@ const RequestCabStep2Screen = ({ navigation }) => {
         <TouchableOpacity
           style={[
             styles.sendButton,
-            { backgroundColor: colors.primary },
+            { backgroundColor: colors.primary, opacity: isSubmitting ? 0.7 : 1 },
           ]}
           onPress={handleSendRequest}
           activeOpacity={0.8}
+          disabled={isSubmitting}
         >
-          <Text
-            style={[
-              styles.sendButtonText,
-              { fontFamily: typography.fontFamily.semiBold },
-            ]}
-          >
-            Send Request →
-          </Text>
+          {isSubmitting ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text
+              style={[
+                styles.sendButtonText,
+                { fontFamily: typography.fontFamily.semiBold },
+              ]}
+            >
+              Send Request →
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -453,6 +554,31 @@ const styles = StyleSheet.create({
   },
   dropdownValue: {
     fontSize: typography.fontSize.md,
+  },
+
+  // Picker list
+  pickerList: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderRadius: spacing.borderRadius.md,
+    maxHeight: 240,
+    overflow: 'hidden',
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#F3F4F6',
+  },
+  pickerItemText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  pickerItemSub: {
+    fontSize: 12,
+    marginTop: 2,
   },
 
   // Working Days

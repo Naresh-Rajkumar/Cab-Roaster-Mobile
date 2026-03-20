@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,25 +6,87 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { SCREENS } from '../../constants';
 import spacing from '../../theme/spacing.json';
 import typography from '../../theme/typography.json';
+import { fetchStops, fetchWorkLocations, setFormData } from '../../redux/slices/requestSlice';
+import CabMapView from '../../components/CabMapView';
 
 const RequestCabStep1Screen = ({ navigation }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
 
-  const [workLocation, setWorkLocation] = useState('Chennai');
-  const [cabPreference, setCabPreference] = useState('both');
-  const [homeLocation, setHomeLocation] = useState('Chromepet');
-  const [differentDrop, setDifferentDrop] = useState(false);
-  const [pickupPoint, setPickupPoint] = useState('Medavakkam - Suggested');
+  const { stops, isLoadingStops, formData } = useSelector((state) => state.request);
+  const user = useSelector((state) => state.auth.user);
+
+  const [workLocation, setWorkLocation] = useState(formData.workLocationName || 'Chennai');
+  const [cabPreference, setCabPreference] = useState(formData.cabUsagePreference || 'both');
+  const [homeLocation, setHomeLocation] = useState(formData.homeLocationAddress || 'Chromepet');
+  const [differentDrop, setDifferentDrop] = useState(formData.differentDrop || false);
+  const [selectedStopId, setSelectedStopId] = useState(formData.preferredPickupStopId || null);
+  const [showStopPicker, setShowStopPicker] = useState(false);
+
+  // Fetch stops on mount
+  useEffect(() => {
+    dispatch(fetchStops());
+    dispatch(fetchWorkLocations());
+  }, [dispatch]);
+
+  // Auto-select first stop as suggested
+  useEffect(() => {
+    if (stops.length > 0 && !selectedStopId) {
+      setSelectedStopId(stops[0].id);
+    }
+  }, [stops, selectedStopId]);
+
+  const selectedStop = stops.find((s) => s.id === selectedStopId);
+  const firstName = user?.firstName || user?.name?.split(' ')[0] || 'Ragha';
+
+  // Build map markers
+  const mapMarkers = [];
+  if (selectedStop?.latitude && selectedStop?.longitude) {
+    mapMarkers.push({
+      id: 'pickup',
+      coordinate: { latitude: selectedStop.latitude, longitude: selectedStop.longitude },
+      title: selectedStop.name,
+      description: 'Pickup Point',
+      type: 'pickup',
+    });
+  }
+  // Office destination marker (Chennai office)
+  mapMarkers.push({
+    id: 'office',
+    coordinate: { latitude: 12.9010, longitude: 80.2279 },
+    title: 'vThink Office',
+    description: 'Sholinganallur',
+    type: 'drop',
+  });
+
+  // Polyline between pickup and office
+  const polylineCoords = [];
+  if (selectedStop?.latitude && selectedStop?.longitude) {
+    polylineCoords.push(
+      { latitude: selectedStop.latitude, longitude: selectedStop.longitude },
+      { latitude: 12.9010, longitude: 80.2279 }
+    );
+  }
 
   const handleContinue = () => {
+    // Persist form data to redux
+    dispatch(setFormData({
+      workLocationName: workLocation,
+      cabUsagePreference: cabPreference,
+      homeLocationAddress: homeLocation,
+      preferredPickupStopId: selectedStopId,
+      differentDrop,
+    }));
     navigation.navigate(SCREENS.REQUEST_CAB_STEP2);
   };
 
@@ -37,7 +99,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
       <View style={[styles.header, { backgroundColor: colors.background }]}>
         <View style={styles.avatarWrapper}>
           <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-            <Text style={styles.avatarText}>R</Text>
+            <Text style={styles.avatarText}>{firstName.charAt(0).toUpperCase()}</Text>
           </View>
         </View>
         <View style={styles.headerTextWrapper}>
@@ -45,7 +107,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
             Good Morning,
           </Text>
           <Text style={[styles.greetingName, { color: colors.text, fontFamily: typography.fontFamily.bold }]}>
-            Ragha!
+            {firstName}!
           </Text>
         </View>
       </View>
@@ -134,7 +196,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
             {[
               { value: 'both', label: 'Both' },
               { value: 'pickup', label: 'Pickup' },
-              { value: 'dropoff', label: 'Drop off' },
+              { value: 'drop', label: 'Drop off' },
             ].map((option) => (
               <TouchableOpacity
                 key={option.value}
@@ -211,7 +273,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
               ]}
               value={homeLocation}
               onChangeText={setHomeLocation}
-              placeholder="Chromepet"
+              placeholder="Enter your home location"
               placeholderTextColor={colors.textTertiary || '#9CA3AF'}
             />
           </View>
@@ -221,7 +283,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
         <View style={styles.section}>
           <View style={styles.pickupHeaderRow}>
             <Text style={[styles.sectionLabel, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
-              Pickup &amp; Drop Point <Text style={{ color: colors.primary }}>*</Text>
+              Pickup & Drop Point <Text style={{ color: colors.primary }}>*</Text>
             </Text>
             <TouchableOpacity
               style={styles.checkboxRow}
@@ -257,7 +319,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
             </TouchableOpacity>
           </View>
 
-          {/* Dropdown */}
+          {/* Stop Dropdown */}
           <TouchableOpacity
             style={[
               styles.dropdownContainer,
@@ -267,6 +329,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
               },
             ]}
             activeOpacity={0.8}
+            onPress={() => setShowStopPicker(!showStopPicker)}
           >
             <Ionicons
               name="location"
@@ -284,7 +347,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
                 },
               ]}
             >
-              {pickupPoint}
+              {isLoadingStops ? 'Loading stops...' : (selectedStop ? `${selectedStop.name} - Suggested` : 'Select pickup point')}
             </Text>
             <Ionicons
               name="chevron-down"
@@ -293,46 +356,82 @@ const RequestCabStep1Screen = ({ navigation }) => {
             />
           </TouchableOpacity>
 
-          {/* Subtext */}
-          <Text
-            style={[
-              styles.distanceSubtext,
-              {
-                color: colors.textSecondary || '#6B7280',
-                fontFamily: typography.fontFamily.regular,
-              },
-            ]}
-          >
-            1.6kms from your location
-          </Text>
-        </View>
+          {/* Stop picker dropdown */}
+          {showStopPicker && stops.length > 0 && (
+            <View style={[styles.stopPickerList, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}>
+              {stops.map((stop) => (
+                <TouchableOpacity
+                  key={stop.id}
+                  style={[
+                    styles.stopPickerItem,
+                    selectedStopId === stop.id && { backgroundColor: '#f1ecff' },
+                  ]}
+                  onPress={() => {
+                    setSelectedStopId(stop.id);
+                    setShowStopPicker(false);
+                  }}
+                >
+                  <Ionicons
+                    name="location"
+                    size={16}
+                    color={selectedStopId === stop.id ? colors.primary : '#9CA3AF'}
+                    style={{ marginRight: 8 }}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.stopPickerName, { color: colors.text }]}>{stop.name}</Text>
+                    {stop.distance && (
+                      <Text style={[styles.stopPickerDist, { color: colors.textSecondary }]}>
+                        {stop.distance} from your location
+                      </Text>
+                    )}
+                  </View>
+                  {selectedStopId === stop.id && (
+                    <Ionicons name="checkmark" size={18} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
-        {/* Map Placeholder */}
-        <View style={styles.mapPlaceholder}>
-          <View style={styles.mapInner}>
+          {/* Distance subtext */}
+          {selectedStop?.distance && (
             <Text
               style={[
-                styles.mapLabel,
+                styles.distanceSubtext,
                 {
-                  color: '#4B7A3E',
-                  fontFamily: typography.fontFamily.medium,
+                  color: colors.textSecondary || '#6B7280',
+                  fontFamily: typography.fontFamily.regular,
                 },
               ]}
             >
-              Map View
+              {selectedStop.distance} from your location
             </Text>
+          )}
+        </View>
+
+        {/* Map View */}
+        <View style={styles.mapContainer}>
+          <CabMapView
+            markers={mapMarkers}
+            polylineCoords={polylineCoords}
+            initialRegion={{
+              latitude: selectedStop?.latitude || 12.9278,
+              longitude: selectedStop?.longitude || 80.2278,
+              latitudeDelta: 0.06,
+              longitudeDelta: 0.06,
+            }}
+            style={styles.mapView}
+            fitToMarkers={mapMarkers.length > 1}
+          />
+          {/* Distance badge overlay */}
+          {selectedStop?.distance && (
             <View style={[styles.distanceBadge, { backgroundColor: colors.primary }]}>
               <Ionicons name="navigate" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
-              <Text
-                style={[
-                  styles.distanceBadgeText,
-                  { fontFamily: typography.fontFamily.semiBold },
-                ]}
-              >
-                1.6kms
+              <Text style={[styles.distanceBadgeText, { fontFamily: typography.fontFamily.semiBold }]}>
+                {selectedStop.distance}
               </Text>
             </View>
-          </View>
+          )}
         </View>
 
         {/* Bottom padding for sticky button */}
@@ -550,24 +649,48 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     marginLeft: spacing.xs,
   },
-  mapPlaceholder: {
-    backgroundColor: '#E8F0E4',
-    borderRadius: spacing.borderRadius.lg,
+
+  // Stop picker
+  stopPickerList: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderRadius: spacing.borderRadius.md,
+    maxHeight: 240,
+    overflow: 'hidden',
+  },
+  stopPickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#F3F4F6',
+  },
+  stopPickerName: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  stopPickerDist: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  // Map
+  mapContainer: {
     height: 180,
+    borderRadius: spacing.borderRadius.lg,
     overflow: 'hidden',
     marginBottom: spacing.md,
+    position: 'relative',
   },
-  mapInner: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  mapLabel: {
-    fontSize: typography.fontSize.lg,
-    lineHeight: typography.lineHeight.lg,
+  mapView: {
+    height: 180,
+    borderRadius: spacing.borderRadius.lg,
   },
   distanceBadge: {
+    position: 'absolute',
+    bottom: 12,
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.md,

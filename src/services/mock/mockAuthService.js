@@ -16,6 +16,38 @@ const delay = () =>
 
 export const mockAuthService = {
   /**
+   * Microsoft SSO mock — returns a mock employee user.
+   */
+  microsoftLogin: async () => {
+    await delay();
+    const user = MOCK_USERS.employee;
+    return {
+      data: {
+        user: { ...user, email: 'dhilip@vthink.co.in' },
+        token: `mock-jwt-microsoft-${Date.now()}`,
+        refreshToken: `mock-refresh-microsoft-${Date.now()}`,
+        expiresIn: 3600,
+      },
+    };
+  },
+
+  /**
+   * Dev/test login with email + password.
+   */
+  employeeLogin: async ({ email }) => {
+    await delay();
+    const user = MOCK_USERS.employee;
+    return {
+      data: {
+        user: { ...user, email: email || 'dhilip@vthink.co.in' },
+        token: `mock-jwt-employee-${Date.now()}`,
+        refreshToken: `mock-refresh-employee-${Date.now()}`,
+        expiresIn: 3600,
+      },
+    };
+  },
+
+  /**
    * Step 1: Request OTP — just confirms the phone number was received.
    * Does NOT return a token. Authentication happens after OTP verification.
    */

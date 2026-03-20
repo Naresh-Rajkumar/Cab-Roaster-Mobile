@@ -4,6 +4,7 @@ import employeeReducer from './slices/employeeSlice';
 import tripReducer from './slices/tripSlice';
 import appReducer from './slices/appSlice';
 import driverReducer from './slices/driverSlice';
+import requestReducer from './slices/requestSlice';
 
 const store = configureStore({
   reducer: {
@@ -12,6 +13,7 @@ const store = configureStore({
     trip: tripReducer,
     app: appReducer,
     driver: driverReducer,
+    request: requestReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
