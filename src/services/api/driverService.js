@@ -15,6 +15,7 @@ const realDriverService = {
   endTrip: (tripId, summary) => axiosInstance.post(`/driver/trips/${tripId}/end`, { summary }),
   updateStopHandoff: (stopId, employeeId, status) =>
     axiosInstance.patch(`/driver/stops/${stopId}/handoff`, { employeeId, status }),
+  getTripHistory: () => axiosInstance.get('/driver/trips/history'),
   saveTripData: (tripId, data) => axiosInstance.post(`/driver/trips/${tripId}/save`, data),
 };
 

@@ -4,9 +4,8 @@ import { authService } from '../../services/api/authService';
 // ─── Thunks ───────────────────────────────────────────────────────────────────
 
 /**
- * loginUser — works with both mock and real auth service.
- * Pass { role: 'employee' | 'driver' } for mock mode.
- * Pass { email, password } or { phone } for real backend.
+ * loginUser — sends OTP to the phone number.
+ * Does NOT authenticate the user yet (that happens after OTP verification).
  */
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
@@ -22,9 +21,10 @@ export const loginUser = createAsyncThunk(
 
 export const verifyOTP = createAsyncThunk(
   'auth/verifyOTP',
-  async ({ phone, otp }, { rejectWithValue }) => {
+  async ({ phone, otp }, { getState, rejectWithValue }) => {
     try {
-      const response = await authService.verifyOTP(phone, otp);
+      const role = getState().auth.pendingRole || 'employee';
+      const response = await authService.verifyOTP(phone, otp, role);
       return response.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'OTP verification failed');
@@ -50,7 +50,8 @@ const authSlice = createSlice({
   initialState: {
     user: null,
     token: null,
-    role: null, // 'employee' | 'driver'
+    role: null,         // 'employee' | 'driver' — set after OTP verified
+    pendingRole: null,  // selected on RoleSelection screen before login
     isAuthenticated: false,
     isLoading: false,
     error: null,
@@ -67,10 +68,14 @@ const authSlice = createSlice({
     setRole: (state, action) => {
       state.role = action.payload;
     },
+    setPendingRole: (state, action) => {
+      state.pendingRole = action.payload;
+    },
     logout: (state) => {
       state.user = null;
       state.token = null;
       state.role = null;
+      state.pendingRole = null;
       state.isAuthenticated = false;
       state.error = null;
     },
@@ -79,25 +84,22 @@ const authSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // loginUser
+    // loginUser — only sends OTP, does NOT set isAuthenticated
     builder
       .addCase(loginUser.pending, (state) => {
         state.isLoading = true;
         state.error = null;
       })
-      .addCase(loginUser.fulfilled, (state, action) => {
+      .addCase(loginUser.fulfilled, (state) => {
         state.isLoading = false;
-        state.user = action.payload.user;
-        state.token = action.payload.token;
-        state.role = action.payload.user?.role || 'employee';
-        state.isAuthenticated = true;
+        // OTP sent — wait for verifyOTP to authenticate
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload;
       });
 
-    // verifyOTP
+    // verifyOTP — authenticates the user
     builder
       .addCase(verifyOTP.pending, (state) => {
         state.isLoading = true;
@@ -107,7 +109,8 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.user = action.payload.user;
         state.token = action.payload.token;
-        state.role = action.payload.user?.role || 'employee';
+        // Use role from response, fallback to the role selected before login
+        state.role = action.payload.user?.role || state.pendingRole || 'employee';
         state.isAuthenticated = true;
       })
       .addCase(verifyOTP.rejected, (state, action) => {
@@ -120,11 +123,12 @@ const authSlice = createSlice({
       state.user = null;
       state.token = null;
       state.role = null;
+      state.pendingRole = null;
       state.isAuthenticated = false;
       state.error = null;
     });
   },
 });
 
-export const { setUser, setToken, setRole, logout, clearError } = authSlice.actions;
+export const { setUser, setToken, setRole, setPendingRole, logout, clearError } = authSlice.actions;
 export default authSlice.reducer;

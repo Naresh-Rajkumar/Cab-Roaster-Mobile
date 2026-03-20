@@ -59,6 +59,21 @@ export const updateStopHandoff = createAsyncThunk(
   }
 );
 
+export const fetchDriverTrips = createAsyncThunk(
+  'driver/fetchTrips',
+  async (_, { rejectWithValue }) => {
+    try {
+      const [upcomingRes, historyRes] = await Promise.all([
+        driverService.getUpcomingTrips(),
+        driverService.getTripHistory(),
+      ]);
+      return { upcomingTrips: upcomingRes.data, tripHistory: historyRes.data };
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to load trips');
+    }
+  }
+);
+
 export const saveTripData = createAsyncThunk(
   'driver/saveTripData',
   async ({ tripId, data }, { rejectWithValue }) => {
@@ -79,6 +94,7 @@ const driverSlice = createSlice({
     activeTrip: null,
     nextTrip: null,
     upcomingTrips: [],
+    tripHistory: [],
     completedTrips: [],
     currentStopIndex: 0,
     routeStops: [],
@@ -134,6 +150,22 @@ const driverSlice = createSlice({
         state.upcomingTrips = action.payload.upcomingTrips;
       })
       .addCase(fetchDriverDashboard.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload;
+      });
+
+    // Fetch Trips (My Trips screen)
+    builder
+      .addCase(fetchDriverTrips.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchDriverTrips.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.upcomingTrips = action.payload.upcomingTrips;
+        state.tripHistory = action.payload.tripHistory;
+      })
+      .addCase(fetchDriverTrips.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload;
       });

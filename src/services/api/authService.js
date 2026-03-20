@@ -13,7 +13,7 @@ import axiosInstance from '../axiosConfig';
 
 const realAuthService = {
   login: (credentials) => axiosInstance.post('/auth/login', credentials),
-  verifyOTP: (phone, otp) => axiosInstance.post('/auth/verify-otp', { phone, otp }),
+  verifyOTP: (phone, otp, role) => axiosInstance.post('/auth/verify-otp', { phone, otp, role }),
   refreshToken: (token) => axiosInstance.post('/auth/refresh', { refreshToken: token }),
   logout: () => axiosInstance.post('/auth/logout'),
   getProfile: () => axiosInstance.get('/auth/profile'),

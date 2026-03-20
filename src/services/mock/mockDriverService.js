@@ -6,6 +6,7 @@ import {
   MOCK_DRIVER_DAILY_STATS,
   MOCK_NEXT_TRIP,
   MOCK_UPCOMING_TRIPS_DRIVER,
+  MOCK_DRIVER_TRIP_HISTORY,
   MOCK_ROUTE_STOPS,
   MOCK_TRIP_SUMMARY,
 } from './mockData';
@@ -63,6 +64,11 @@ export const mockDriverService = {
     return {
       data: { stopId, employeeId, status, updatedAt: new Date().toISOString() },
     };
+  },
+
+  getTripHistory: async () => {
+    await delay();
+    return { data: MOCK_DRIVER_TRIP_HISTORY };
   },
 
   saveTripData: async (tripId, data) => {

@@ -6,47 +6,93 @@ import {
   FlatList,
   Dimensions,
   TouchableOpacity,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Button } from '../../components';
 import spacing from '../../theme/spacing.json';
 import typography from '../../theme/typography.json';
-import { SCREENS } from '../../constants';
+import { SCREENS, USER_ROLES } from '../../constants';
 
 const { width } = Dimensions.get('window');
 
-const ONBOARDING_DATA = [
+const EMPLOYEE_SLIDES = [
   {
     id: '1',
     title: 'Where can we find you?',
-    description:
-      'Set your pickup location so we can find the best route for your daily commute.',
+    description: 'Enter your pickup and drop location to get started.',
     icon: 'location',
-    color: '#6C3AE1',
-    buttonText: 'Confirm The Location',
+    color: '#643ee8',
+    accentBg: '#f1ecff',
+    buttonText: 'Continue The Journey',
   },
   {
     id: '2',
     title: 'Your Office Ride, Made Easy',
-    description:
-      'Enjoy seamless daily commutes with real-time tracking, smart routing, and hassle-free pickups.',
+    description: 'Track, and manage your office cab in just a few taps.',
     icon: 'car',
-    color: '#6C3AE1',
-    buttonText: 'Next',
+    color: '#643ee8',
+    accentBg: '#f1ecff',
+    buttonText: 'Keep Rolling',
   },
   {
     id: '3',
     title: 'Effortless Attendance',
-    description:
-      'Mark your attendance automatically when you board. No more manual check-ins.',
+    description: 'Attendance made simple and stress-free.',
     icon: 'checkbox',
-    color: '#6C3AE1',
+    color: '#643ee8',
+    accentBg: '#f1ecff',
     buttonText: 'Ready To Go',
   },
 ];
+
+const DRIVER_SLIDES = [
+  {
+    id: '1',
+    title: 'Start Your Assigned Trip',
+    description: 'Tap "Start Trip" to begin your route and view all pickup details for the shift.',
+    icon: 'car-sport',
+    color: '#16a34a',
+    accentBg: '#e8f6ed',
+    buttonText: 'Next',
+  },
+  {
+    id: '2',
+    title: 'Confirm Each Pickup',
+    description: 'Mark employees as picked up at every stop to keep trip records accurate and updated.',
+    icon: 'people',
+    color: '#16a34a',
+    accentBg: '#e8f6ed',
+    buttonText: 'Next',
+  },
+  {
+    id: '3',
+    title: 'End & Submit Trip',
+    description: 'Finish the trip after all drop-offs to automatically log trip details.',
+    icon: 'checkmark-circle',
+    color: '#16a34a',
+    accentBg: '#e8f6ed',
+    buttonText: 'Ready to Drive',
+  },
+];
+
+const Slide = ({ item, colors }) => (
+  <View style={[styles.slide, { width }]}>
+    <View style={[styles.illustrationOuter, { backgroundColor: item.accentBg }]}>
+      <View style={[styles.illustrationMiddle, { backgroundColor: item.accentBg, borderColor: item.color + '22' }]}>
+        <View style={[styles.iconCircle, { backgroundColor: item.color }]}>
+          <Ionicons name={item.icon} size={52} color="#ffffff" />
+        </View>
+      </View>
+      <View style={[styles.decoDot1, { backgroundColor: item.color + '33' }]} />
+      <View style={[styles.decoDot2, { backgroundColor: item.color + '22' }]} />
+    </View>
+    <Text style={[styles.slideTitle, { color: colors.text }]}>{item.title}</Text>
+    <Text style={[styles.slideDesc, { color: colors.textSecondary }]}>{item.description}</Text>
+  </View>
+);
 
 const OnboardingScreen = ({ navigation }) => {
   const { theme } = useTheme();
@@ -54,126 +100,76 @@ const OnboardingScreen = ({ navigation }) => {
   const flatListRef = useRef(null);
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  const role = useSelector((state) => state.auth.role);
+  const slides = role === USER_ROLES.DRIVER ? DRIVER_SLIDES : EMPLOYEE_SLIDES;
+  const accentColor = role === USER_ROLES.DRIVER ? '#16a34a' : colors.primary;
+
   const handleNext = () => {
-    if (currentIndex < ONBOARDING_DATA.length - 1) {
-      flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
+    if (currentIndex < slides.length - 1) {
+      flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
       setCurrentIndex(currentIndex + 1);
     } else {
-      navigation.replace(SCREENS.WELCOME);
+      navigation.navigate(SCREENS.LOGIN);
     }
   };
 
   const handleSkip = () => {
-    navigation.replace(SCREENS.WELCOME);
+    navigation.navigate(SCREENS.LOGIN);
   };
 
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
     if (viewableItems.length > 0) {
-      setCurrentIndex(viewableItems[0].index);
+      setCurrentIndex(viewableItems[0].index ?? 0);
     }
   }).current;
 
-  const renderItem = ({ item }) => (
-    <View style={[styles.slide, { width }]}>
-      {/* Illustration placeholder */}
-      <View
-        style={[
-          styles.illustrationContainer,
-          { backgroundColor: colors.primaryContainer },
-        ]}
-      >
-        <View style={[styles.iconCircle, { backgroundColor: colors.primary }]}>
-          <Ionicons name={item.icon} size={64} color="#FFFFFF" />
-        </View>
-      </View>
-
-      <View style={styles.textContainer}>
-        <Text
-          style={[
-            styles.title,
-            {
-              color: colors.text,
-              fontFamily: typography.fontFamily.bold,
-            },
-          ]}
-        >
-          {item.title}
-        </Text>
-        <Text
-          style={[
-            styles.description,
-            {
-              color: colors.textSecondary,
-              fontFamily: typography.fontFamily.regular,
-            },
-          ]}
-        >
-          {item.description}
-        </Text>
-      </View>
-    </View>
-  );
-
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-    >
-      {/* Skip button */}
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.headerRow}>
         <View />
-        <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
-          <Text
-            style={[
-              styles.skipText,
-              {
-                color: colors.primary,
-                fontFamily: typography.fontFamily.medium,
-              },
-            ]}
-          >
-            Skip
-          </Text>
+        <TouchableOpacity
+          onPress={handleSkip}
+          style={styles.skipButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={[styles.skipText, { color: accentColor }]}>Skip</Text>
         </TouchableOpacity>
       </View>
 
       <FlatList
         ref={flatListRef}
-        data={ONBOARDING_DATA}
-        renderItem={renderItem}
+        data={slides}
+        renderItem={({ item }) => <Slide item={item} colors={colors} />}
         keyExtractor={(item) => item.id}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ viewAreaCoveragePercentThreshold: 50 }}
+        scrollEventThrottle={16}
       />
 
-      {/* Dots & Button */}
       <View style={styles.footer}>
-        <View style={styles.dotsContainer}>
-          {ONBOARDING_DATA.map((_, index) => (
+        <View style={styles.dotsRow}>
+          {slides.map((_, idx) => (
             <View
-              key={index}
+              key={idx}
               style={[
                 styles.dot,
                 {
-                  backgroundColor:
-                    index === currentIndex
-                      ? colors.primary
-                      : colors.border,
-                  width: index === currentIndex ? 24 : 8,
+                  backgroundColor: idx === currentIndex ? accentColor : colors.border,
+                  width: idx === currentIndex ? 24 : 8,
                 },
               ]}
             />
           ))}
         </View>
-
         <Button
-          title={ONBOARDING_DATA[currentIndex]?.buttonText || 'Next'}
+          title={slides[currentIndex]?.buttonText ?? 'Next'}
           onPress={handleNext}
           fullWidth
           size="lg"
-          style={styles.nextButton}
+          style={[styles.btn, { backgroundColor: accentColor }]}
         />
       </View>
     </SafeAreaView>
@@ -181,9 +177,7 @@ const OnboardingScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -191,65 +185,84 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingTop: spacing.sm,
   },
-  skipButton: {
-    padding: spacing.sm,
-  },
-  skipText: {
-    fontSize: typography.fontSize.md,
-  },
+  skipButton: { padding: spacing.sm },
+  skipText: { fontSize: typography.fontSize.md, fontWeight: '500' },
   slide: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
   },
-  illustrationContainer: {
+  illustrationOuter: {
     width: 240,
     height: 240,
     borderRadius: 120,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xxxl,
+    marginBottom: 36,
+    position: 'relative',
   },
-  iconCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  illustrationMiddle: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1.5,
   },
-  textContainer: {
+  iconCircle: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     alignItems: 'center',
-    paddingHorizontal: spacing.base,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  title: {
+  decoDot1: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    top: 20,
+    right: 20,
+  },
+  decoDot2: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    bottom: 24,
+    left: 18,
+  },
+  slideTitle: {
     fontSize: typography.fontSize.xxl,
+    fontWeight: '700',
     textAlign: 'center',
     marginBottom: spacing.md,
+    letterSpacing: -0.3,
   },
-  description: {
+  slideDesc: {
     fontSize: typography.fontSize.base,
     textAlign: 'center',
-    lineHeight: typography.lineHeight.base,
+    lineHeight: 24,
   },
   footer: {
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xxl,
   },
-  dotsContainer: {
+  dotsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.xl,
     gap: spacing.sm,
   },
-  dot: {
-    height: 8,
-    borderRadius: 4,
-  },
-  nextButton: {
-    borderRadius: 12,
-  },
+  dot: { height: 8, borderRadius: 4 },
+  btn: { borderRadius: 14 },
 });
 
 export default OnboardingScreen;

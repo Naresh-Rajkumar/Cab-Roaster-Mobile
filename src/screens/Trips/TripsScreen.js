@@ -1,266 +1,353 @@
-import React, { useState, useCallback, useEffect } from 'react';
+/**
+ * Employee Trips Screen — Figma: Employee Handoff 09/02/2026 "My Trips"
+ */
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  FlatList,
-  RefreshControl,
-  ActivityIndicator,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useSelector, useDispatch } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Avatar, StatusBadge, Button } from '../../components';
-import spacing from '../../theme/spacing.json';
-import typography from '../../theme/typography.json';
+import { Avatar } from '../../components';
 import { SCREENS } from '../../constants';
-import { fetchCurrentRide, fetchTrips } from '../../redux/slices/tripSlice';
+import {
+  MOCK_CURRENT_RIDE,
+  MOCK_UPCOMING_TRIPS_EMPLOYEE,
+  MOCK_TRIP_HISTORY_EMPLOYEE,
+} from '../../services/mock/mockData';
 
-
-const STATUS_BADGE_MAP = {
-  completed: { label: 'Completed', color: '#22C55E', bg: '#DCFCE7' },
-  cancelled: { label: 'Cancelled', color: '#EF4444', bg: '#FEE2E2' },
-  not_used: { label: 'Not Used', color: '#EF4444', bg: '#FEE2E2' },
-  scheduled: { label: 'Scheduled', color: '#6C3AE1', bg: '#EDE7FB' },
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+const STATUS_MAP = {
+  scheduled:  { label: 'Scheduled',  bg: '#ede9fe', color: '#6d28d9' },
+  completed:  { label: 'Completed',  bg: '#dcfce7', color: '#16a34a' },
+  cancelled:  { label: 'Cancelled',  bg: '#fee2e2', color: '#dc2626' },
+  not_used:   { label: 'Not Used',   bg: '#fee2e2', color: '#dc2626' },
 };
 
-const InlineBadge = ({ status, colors }) => {
-  const badge = STATUS_BADGE_MAP[status] || STATUS_BADGE_MAP.scheduled;
+const TripBadge = ({ status }) => {
+  const s = STATUS_MAP[status] ?? { label: status, bg: '#f3f4f6', color: '#6b7280' };
   return (
-    <View style={[styles.inlineBadge, { backgroundColor: badge.bg }]}>
-      <View style={[styles.inlineBadgeDot, { backgroundColor: badge.color }]} />
-      <Text style={[styles.inlineBadgeText, { color: badge.color, fontFamily: typography.fontFamily.medium }]}>
-        {badge.label}
-      </Text>
+    <View style={[styles.badge, { backgroundColor: s.bg }]}>
+      <View style={[styles.badgeDot, { backgroundColor: s.color }]} />
+      <Text style={[styles.badgeText, { color: s.color }]}>{s.label}</Text>
     </View>
   );
 };
 
+// ─── Current Ride Card ────────────────────────────────────────────────────────
+const CurrentRideCard = ({ ride, colors, onTrack }) => (
+  <View style={[styles.currentCard, { backgroundColor: colors.surface }]}>
+    {/* Pickup */}
+    <View style={styles.routeStop}>
+      <View style={[styles.checkBox, { backgroundColor: '#e8f6ed' }]}>
+        <Ionicons name="checkmark" size={13} color="#16a34a" />
+      </View>
+      <Text style={[styles.stopName, { color: colors.text }]}>{ride.pickup}</Text>
+    </View>
+
+    {/* Distance */}
+    <View style={styles.connectorRow}>
+      <View style={[styles.vertDash, { borderColor: colors.border }]} />
+      <Text style={[styles.distLabel, { color: colors.textSecondary }]}>{ride.distance}</Text>
+    </View>
+
+    {/* Dropoff */}
+    <View style={styles.routeStop}>
+      <View style={[styles.destCircle, { borderColor: colors.primary, backgroundColor: colors.primaryContainer }]}>
+        <Ionicons name="person" size={11} color={colors.primary} />
+      </View>
+      <Text style={[styles.stopName, { color: colors.text }]}>{ride.dropoff}</Text>
+      <View style={[styles.etaBadge, { backgroundColor: colors.primaryContainer }]}>
+        <View style={[styles.etaDot, { backgroundColor: colors.primary }]} />
+        <Text style={[styles.etaText, { color: colors.primary }]}>{ride.eta}</Text>
+      </View>
+    </View>
+
+    <View style={[styles.divider, { backgroundColor: colors.borderLight }]} />
+
+    {/* Driver */}
+    <View style={styles.driverRow}>
+      <Avatar name={ride.driverName} size={42} />
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.driverName, { color: colors.text }]}>{ride.driverName}</Text>
+        <Text style={[styles.vehicleText, { color: colors.textSecondary }]}>
+          {ride.vehicleNo}{' '}
+          <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
+          {ride.vehicleType}
+        </Text>
+      </View>
+      <TouchableOpacity style={[styles.callBtn, { borderColor: colors.borderLight }]}>
+        <Ionicons name="call-outline" size={18} color={colors.text} />
+      </TouchableOpacity>
+    </View>
+
+    <TouchableOpacity
+      style={[styles.trackBtn, { backgroundColor: colors.primary }]}
+      onPress={onTrack}
+      activeOpacity={0.85}
+    >
+      <Ionicons name="navigate-outline" size={18} color="#fff" />
+      <Text style={styles.trackBtnText}>Track Ride</Text>
+    </TouchableOpacity>
+  </View>
+);
+
+// ─── Trip Action Sheet (screen 17/21) ─────────────────────────────────────────
+const TripActionSheet = ({ trip, colors, visible, onClose, onChangeLocation, onCancel, onReport }) => (
+  <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+    <Pressable style={styles.sheetBackdrop} onPress={onClose} />
+    <View style={[styles.sheetContainer, { backgroundColor: colors.surface }]}>
+      {/* Handle */}
+      <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+
+      {/* Trip header */}
+      <View style={styles.sheetTripHeader}>
+        <View style={[styles.tripIconBox, { backgroundColor: trip?.iconBg ?? '#e8f6ed' }]}>
+          <Ionicons name={trip?.icon ?? 'business-outline'} size={20} color={trip?.iconColor ?? '#16a34a'} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.sheetTripTitle, { color: colors.text }]}>{trip?.title}</Text>
+          <Text style={[styles.sheetTripDate, { color: colors.textSecondary }]}>{trip?.date}</Text>
+        </View>
+        <TripBadge status={trip?.status ?? 'scheduled'} />
+      </View>
+
+      {/* Pickup / Drop */}
+      <View style={[styles.sheetRouteCard, { backgroundColor: colors.background }]}>
+        <View style={styles.sheetRouteRow}>
+          <Ionicons name="location" size={14} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.sheetRouteLabel, { color: colors.textTertiary }]}>Pickup</Text>
+            <Text style={[styles.sheetRouteValue, { color: colors.text }]}>{trip?.pickupName ?? trip?.from}</Text>
+          </View>
+        </View>
+        <View style={[styles.sheetRouteDivider, { backgroundColor: colors.borderLight }]} />
+        <View style={styles.sheetRouteRow}>
+          <Ionicons name="business-outline" size={14} color="#dc2626" />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.sheetRouteLabel, { color: colors.textTertiary }]}>Drop</Text>
+            <Text style={[styles.sheetRouteValue, { color: colors.text }]}>{trip?.dropName ?? trip?.to}</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Actions */}
+      <TouchableOpacity style={[styles.sheetAction, { borderBottomColor: colors.borderLight }]} onPress={onChangeLocation} activeOpacity={0.7}>
+        <View style={[styles.sheetActionIcon, { backgroundColor: colors.primaryContainer }]}>
+          <Ionicons name="location-outline" size={18} color={colors.primary} />
+        </View>
+        <Text style={[styles.sheetActionText, { color: colors.text }]}>Change Location</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+      </TouchableOpacity>
+
+      <TouchableOpacity style={[styles.sheetAction, { borderBottomColor: colors.borderLight }]} onPress={onReport} activeOpacity={0.7}>
+        <View style={[styles.sheetActionIcon, { backgroundColor: '#fef3c7' }]}>
+          <Ionicons name="alert-circle-outline" size={18} color="#f59e0b" />
+        </View>
+        <Text style={[styles.sheetActionText, { color: colors.text }]}>Report Issue</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.sheetAction} onPress={onCancel} activeOpacity={0.7}>
+        <View style={[styles.sheetActionIcon, { backgroundColor: '#fee2e2' }]}>
+          <Ionicons name="close-circle-outline" size={18} color="#dc2626" />
+        </View>
+        <Text style={[styles.sheetActionText, { color: '#dc2626' }]}>Cancel Ride</Text>
+        <Ionicons name="chevron-forward" size={16} color="#dc2626" />
+      </TouchableOpacity>
+
+      <TouchableOpacity style={[styles.sheetDismissBtn, { borderColor: colors.border }]} onPress={onClose} activeOpacity={0.8}>
+        <Text style={[styles.sheetDismissText, { color: colors.textSecondary }]}>Dismiss</Text>
+      </TouchableOpacity>
+    </View>
+  </Modal>
+);
+
+// ─── Upcoming Trip Card ───────────────────────────────────────────────────────
+const UpcomingTripCard = ({ trip, colors, onMenuPress }) => (
+  <View style={[styles.tripCard, { backgroundColor: colors.surface }]}>
+    <View style={styles.tripCardTop}>
+      <View style={[styles.tripIconBox, { backgroundColor: trip.iconBg }]}>
+        <Ionicons name={trip.icon} size={20} color={trip.iconColor} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.tripTitle, { color: colors.text }]}>{trip.title}</Text>
+        <Text style={[styles.tripDate, { color: colors.textSecondary }]}>{trip.date}</Text>
+      </View>
+      <TouchableOpacity onPress={() => onMenuPress(trip)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Ionicons name="ellipsis-vertical" size={18} color={colors.textTertiary} />
+      </TouchableOpacity>
+    </View>
+    <View style={styles.tripRoute}>
+      <Text style={[styles.routeFrom, { color: colors.textSecondary }]}>{trip.from}</Text>
+      <View style={styles.routeDashes}>
+        {[...Array(5)].map((_, i) => (
+          <View key={i} style={[styles.dash, { backgroundColor: colors.border }]} />
+        ))}
+      </View>
+      <Text style={[styles.routeTo, { color: colors.text }]}>{trip.to}</Text>
+      <TripBadge status={trip.status} />
+    </View>
+  </View>
+);
+
+// ─── History Trip Card ────────────────────────────────────────────────────────
+const HistoryTripCard = ({ trip, colors }) => (
+  <View style={[styles.tripCard, { backgroundColor: colors.surface }]}>
+    <View style={styles.tripRoute}>
+      <Text style={[styles.routeFrom, { color: colors.textSecondary }]}>{trip.from}</Text>
+      <View style={styles.routeDashes}>
+        {[...Array(5)].map((_, i) => (
+          <View key={i} style={[styles.dash, { backgroundColor: colors.border }]} />
+        ))}
+      </View>
+      <Text style={[styles.routeTo, { color: colors.text }]}>{trip.to}</Text>
+      <TripBadge status={trip.status} />
+    </View>
+    <View style={[styles.divider, { backgroundColor: colors.borderLight }]} />
+    <View style={styles.tripCardTop}>
+      <View style={[styles.tripIconBox, { backgroundColor: trip.iconBg }]}>
+        <Ionicons name={trip.icon} size={20} color={trip.iconColor} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.vehicleText, { color: colors.text }]}>
+          {trip.vehicleNo}{' '}
+          <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
+          {trip.vehicleType}
+        </Text>
+        <Text style={[styles.tripDate, { color: colors.textSecondary }]}>{trip.time}</Text>
+      </View>
+      <TouchableOpacity>
+        <Ionicons name="ellipsis-vertical" size={18} color={colors.textTertiary} />
+      </TouchableOpacity>
+    </View>
+  </View>
+);
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 const TripsScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
-  const dispatch = useDispatch();
-  const currentRide = useSelector((state) => state.trip.currentRide);
-  const upcomingTrips = useSelector((state) => state.trip.upcomingTrips);
-  const historyTrips = useSelector((state) => state.trip.historyTrips);
-  const isLoading = useSelector((state) => state.trip.isLoading);
-  const [activeTab, setActiveTab] = useState('upcoming');
-  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
+  const [selectedTrip, setSelectedTrip] = useState(null);
+  const [sheetVisible, setSheetVisible] = useState(false);
 
-  useEffect(() => {
-    dispatch(fetchCurrentRide());
-    dispatch(fetchTrips({ type: 'upcoming' }));
-    dispatch(fetchTrips({ type: 'history' }));
-  }, [dispatch]);
+  const openSheet = (trip) => {
+    setSelectedTrip(trip);
+    setSheetVisible(true);
+  };
+  const closeSheet = () => setSheetVisible(false);
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    Promise.all([
-      dispatch(fetchCurrentRide()),
-      dispatch(fetchTrips({ type: 'upcoming' })),
-      dispatch(fetchTrips({ type: 'history' })),
-    ]).finally(() => setRefreshing(false));
-  }, [dispatch]);
+  const handleChangeLocation = () => {
+    closeSheet();
+    navigation.navigate(SCREENS.SELECT_PICKUP, { trip: selectedTrip, mode: 'change_location' });
+  };
+  const handleCancelRide = () => {
+    closeSheet();
+    navigation.navigate(SCREENS.CANCEL_REQUEST, { trip: selectedTrip });
+  };
+  const handleReportIssue = () => {
+    closeSheet();
+    navigation.navigate(SCREENS.REPORT_ISSUE, { trip: selectedTrip });
+  };
+
+  // Group history by dateLabel
+  const historyGroups = MOCK_TRIP_HISTORY_EMPLOYEE.reduce((acc, trip) => {
+    const key = trip.dateLabel;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(trip);
+    return acc;
+  }, {});
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
-      <Text style={[styles.screenTitle, { color: colors.text, fontFamily: typography.fontFamily.bold }]}>
-        My Trips
-      </Text>
-
-      {/* Pill tabs */}
-      <View style={[styles.tabContainer, { backgroundColor: colors.surface }]}>
-        {['upcoming', 'history'].map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            onPress={() => setActiveTab(tab)}
-            style={[
-              styles.tab,
-              activeTab === tab && [styles.activeTab, { backgroundColor: colors.primaryContainer }],
-            ]}
-          >
-            <Text style={[
-              styles.tabText,
-              {
-                color: activeTab === tab ? colors.primary : colors.textSecondary,
-                fontFamily: activeTab === tab ? typography.fontFamily.semiBold : typography.fontFamily.regular,
-              },
-            ]}>
-              {tab === 'upcoming' ? 'Upcoming' : 'History'}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <TripActionSheet
+        trip={selectedTrip}
+        colors={colors}
+        visible={sheetVisible}
+        onClose={closeSheet}
+        onChangeLocation={handleChangeLocation}
+        onCancel={handleCancelRide}
+        onReport={handleReportIssue}
+      />
+      {/* Page title */}
+      <View style={styles.pageHeader}>
+        <Text style={[styles.pageTitle, { color: colors.text }]}>My Trips</Text>
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
-      >
-        {activeTab === 'upcoming' ? (
+      {/* Segment control */}
+      <View style={styles.segmentWrapper}>
+        <View style={[styles.segmentControl, { backgroundColor: colors.primaryContainer }]}>
+          {['Upcoming', 'History'].map((tab, idx) => (
+            <TouchableOpacity
+              key={tab}
+              style={[
+                styles.segmentTab,
+                activeTab === idx && [styles.segmentTabActive, { backgroundColor: colors.surface }],
+              ]}
+              onPress={() => setActiveTab(idx)}
+              activeOpacity={0.8}
+            >
+              <Text style={[
+                styles.segmentText,
+                { color: activeTab === idx ? colors.text : colors.textSecondary },
+                activeTab === idx && { fontWeight: '700' },
+              ]}>
+                {tab}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+        {activeTab === 0 ? (
           <>
             {/* Current Ride */}
-            <Text style={[styles.sectionHeader, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
-              Current Ride
-            </Text>
-            <View style={[styles.currentRideCard, { backgroundColor: colors.surface }]}>
-              {/* Route */}
-              <View style={styles.routeRow}>
-                <View style={[styles.stopDotGreen]} />
-                <Text style={[styles.stopLabel, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
-                  {currentRide?.pickup || '—'}
-                </Text>
-              </View>
-              <View style={styles.midRow}>
-                <View style={styles.leftDots}>
-                  <View style={[styles.midDot, { backgroundColor: colors.primary }]} />
-                  <View style={[styles.midDash, { borderLeftColor: colors.border }]} />
-                </View>
-                <Text style={[styles.distText, { color: colors.textSecondary, fontFamily: typography.fontFamily.regular }]}>
-                  {currentRide?.distance || '—'}
-                </Text>
-              </View>
-              <View style={styles.routeRow}>
-                <View style={[styles.stopIconBorder, { borderColor: colors.primary }]}>
-                  <Ionicons name="person-outline" size={11} color={colors.primary} />
-                </View>
-                <Text style={[styles.stopLabel, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
-                  {currentRide?.dropoff || '—'}
-                </Text>
-                <View style={{ flex: 1 }} />
-                <View style={[styles.etaBadge, { backgroundColor: colors.primaryContainer }]}>
-                  <View style={[styles.etaDot, { backgroundColor: colors.primary }]} />
-                  <Text style={[styles.etaText, { color: colors.primary, fontFamily: typography.fontFamily.medium }]}>
-                    {currentRide?.eta || '—'}
-                  </Text>
-                </View>
-              </View>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Current Ride</Text>
+            <CurrentRideCard
+              ride={MOCK_CURRENT_RIDE}
+              colors={colors}
+              onTrack={() => navigation.navigate(SCREENS.LIVE_TRACKING)}
+            />
 
-              <View style={[styles.divider, { backgroundColor: colors.borderLight }]} />
-
-              {/* Driver */}
-              <View style={styles.driverRow}>
-                <Avatar name={currentRide?.driverName || 'Driver'} size={40} />
-                <View style={styles.driverInfo}>
-                  <Text style={[styles.driverName, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
-                    {currentRide?.driverName || '—'}
-                  </Text>
-                  <Text style={[styles.vehicleInfo, { color: colors.textSecondary, fontFamily: typography.fontFamily.regular }]}>
-                    {currentRide?.vehicleNo} • {currentRide?.vehicleType}
-                  </Text>
-                </View>
-                <TouchableOpacity style={[styles.callBtn, { borderColor: colors.border, borderWidth: 1 }]}>
-                  <Ionicons name="call-outline" size={20} color={colors.text} />
-                </TouchableOpacity>
-              </View>
-
-              <Button
-                title="Track Ride"
-                onPress={() => navigation.navigate(SCREENS.LIVE_TRACKING)}
-                fullWidth
-                size="lg"
-                icon={<Ionicons name="navigate-outline" size={18} color="#FFFFFF" />}
-                style={styles.trackBtn}
-              />
-            </View>
-
-            {/* This week */}
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionHeader, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
-                This week
-              </Text>
-              <Text style={[styles.tripCount, { color: colors.textSecondary, fontFamily: typography.fontFamily.regular }]}>
-                {upcomingTrips.length} Scheduled Trips
+            {/* This Week */}
+            <View style={styles.weekHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>This week</Text>
+              <Text style={[styles.weekCount, { color: colors.textSecondary }]}>
+                {MOCK_UPCOMING_TRIPS_EMPLOYEE.length} Scheduled Trips
               </Text>
             </View>
-
-            {upcomingTrips.map((trip) => (
-              <TouchableOpacity key={trip.id} style={[styles.tripCard, { backgroundColor: colors.surface }]} onPress={() => navigation.navigate(SCREENS.TRIP_DETAILS, { trip })} activeOpacity={0.75}>
-                <View style={styles.tripCardHeader}>
-                  <View style={[styles.tripIcon, { backgroundColor: trip.iconBg }]}>
-                    <Ionicons name={trip.icon} size={18} color={trip.iconColor} />
-                  </View>
-                  <View style={styles.tripTitleBlock}>
-                    <Text style={[styles.tripTitle, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
-                      {trip.title}
-                    </Text>
-                    <Text style={[styles.tripDate, { color: colors.textSecondary, fontFamily: typography.fontFamily.regular }]}>
-                      {trip.date}
-                    </Text>
-                  </View>
-                  <TouchableOpacity>
-                    <Ionicons name="ellipsis-vertical" size={18} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.tripRouteRow}>
-                  <Text style={[styles.tripRouteText, { color: colors.textSecondary, fontFamily: typography.fontFamily.regular }]}>
-                    {trip.from}
-                  </Text>
-                  <Text style={[styles.tripRouteDash, { color: colors.textTertiary }]}>{' - - - '}</Text>
-                  <Text style={[styles.tripRouteText, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
-                    {trip.to}
-                  </Text>
-                  <View style={{ flex: 1 }} />
-                  <InlineBadge status={trip.status} colors={colors} />
-                </View>
-              </TouchableOpacity>
+            {MOCK_UPCOMING_TRIPS_EMPLOYEE.map((trip) => (
+              <UpcomingTripCard key={trip.id} trip={trip} colors={colors} onMenuPress={openSheet} />
             ))}
           </>
         ) : (
           <>
             {/* Date filter */}
-            <TouchableOpacity style={[styles.dateFilter, { backgroundColor: colors.surface }]}>
-              <Text style={[styles.dateFilterText, { color: colors.text, fontFamily: typography.fontFamily.regular }]}>
-                Last Week
-              </Text>
-              <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
+            <View style={[styles.dateFilterRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.dateFilterText, { color: colors.text }]}>Last Week</Text>
+              <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
+            </View>
 
-            {historyTrips.length > 0 && (
-              <Text style={[styles.dateSectionLabel, { color: colors.text, fontFamily: typography.fontFamily.bold }]}>
-                {historyTrips[0]?.dateLabel || 'Recent'}
-              </Text>
-            )}
-
-            {historyTrips.map((trip) => (
-              <TouchableOpacity key={trip.id} style={[styles.historyCard, { backgroundColor: colors.surface }]} onPress={() => navigation.navigate(SCREENS.TRIP_DETAILS, { trip })} activeOpacity={0.75}>
-                <View style={styles.historyTop}>
-                  <Text style={[styles.historyRoute, { color: colors.textSecondary, fontFamily: typography.fontFamily.regular }]}>
-                    {trip.from}
-                  </Text>
-                  <Text style={{ color: colors.textTertiary }}> - - - </Text>
-                  <Text style={[styles.historyRoute, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
-                    {trip.to}
-                  </Text>
-                  <View style={{ flex: 1 }} />
-                  <InlineBadge status={trip.status} colors={colors} />
-                </View>
-                <View style={styles.historyBottom}>
-                  <View style={[styles.tripIcon, { backgroundColor: trip.iconBg }]}>
-                    <Ionicons name={trip.icon} size={16} color={trip.iconColor} />
-                  </View>
-                  <View style={styles.historyVehicleInfo}>
-                    <Text style={[styles.historyVehicle, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
-                      {trip.vehicleNo} • {trip.vehicleType}
-                    </Text>
-                    <Text style={[styles.historyTime, { color: colors.textSecondary, fontFamily: typography.fontFamily.regular }]}>
-                      {trip.time}
-                    </Text>
-                  </View>
-                  <TouchableOpacity>
-                    <Ionicons name="ellipsis-vertical" size={18} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
+            {/* Grouped history */}
+            {Object.entries(historyGroups).map(([dateLabel, trips]) => (
+              <View key={dateLabel}>
+                <Text style={[styles.dateSectionLabel, { color: colors.text }]}>{dateLabel}</Text>
+                {trips.map((trip) => (
+                  <HistoryTripCard key={trip.id} trip={trip} colors={colors} />
+                ))}
+              </View>
             ))}
           </>
         )}
-
-        <View style={{ height: spacing.xxxl }} />
+        <View style={{ height: 80 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -268,63 +355,155 @@ const TripsScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  screenTitle: { fontSize: 22, paddingHorizontal: spacing.base, paddingTop: spacing.base, marginBottom: spacing.md },
-  tabContainer: {
+  pageHeader: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
+  pageTitle: { fontSize: 22, fontWeight: '700' },
+  listContent: { padding: 16 },
+
+  // Segment
+  segmentWrapper: { paddingHorizontal: 16, marginBottom: 16 },
+  segmentControl: {
     flexDirection: 'row',
-    marginHorizontal: spacing.base,
     borderRadius: 12,
     padding: 4,
-    marginBottom: spacing.lg,
   },
-  tab: { flex: 1, paddingVertical: spacing.sm, borderRadius: 10, alignItems: 'center' },
-  activeTab: {},
-  tabText: { fontSize: 14 },
-  scrollContent: { paddingHorizontal: spacing.base, paddingBottom: spacing.xxxl },
-  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
-  sectionHeader: { fontSize: 16, marginBottom: spacing.md },
-  tripCount: { fontSize: 13 },
-  currentRideCard: { borderRadius: 16, padding: spacing.base, marginBottom: spacing.xl, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
-  routeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  stopDotGreen: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' },
-  stopLabel: { fontSize: 15 },
-  midRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 6, marginVertical: 2 },
-  leftDots: { alignItems: 'center', width: 28, marginRight: spacing.md },
-  midDot: { width: 8, height: 8, borderRadius: 4 },
-  midDash: { borderLeftWidth: 1.5, borderStyle: 'dashed', height: 12 },
-  distText: { fontSize: 13 },
-  stopIconBorder: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  etaBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: 999 },
-  etaDot: { width: 6, height: 6, borderRadius: 3, marginRight: 4 },
-  etaText: { fontSize: 12 },
-  divider: { height: 1, marginVertical: spacing.md },
-  driverRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
-  driverInfo: { flex: 1 },
-  driverName: { fontSize: 15 },
-  vehicleInfo: { fontSize: 12, marginTop: 2 },
-  callBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  trackBtn: { borderRadius: 12 },
-  tripCard: { borderRadius: 16, padding: spacing.base, marginBottom: spacing.md, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  tripCardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
-  tripIcon: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  tripTitleBlock: { flex: 1 },
-  tripTitle: { fontSize: 15 },
+  segmentTab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  segmentTabActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  segmentText: { fontSize: 14 },
+
+  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  weekHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  weekCount: { fontSize: 13 },
+
+  // Current ride card
+  currentCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  routeStop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  checkBox: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  destCircle: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  stopName: { flex: 1, fontSize: 15, fontWeight: '600' },
+  connectorRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 10, paddingVertical: 4, gap: 12 },
+  vertDash: { borderLeftWidth: 1.5, borderStyle: 'dashed', height: 18 },
+  distLabel: { fontSize: 13 },
+  etaBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, gap: 4 },
+  etaDot: { width: 6, height: 6, borderRadius: 3 },
+  etaText: { fontSize: 11, fontWeight: '600' },
+  divider: { height: 1, marginVertical: 12 },
+  driverRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  driverName: { fontSize: 14, fontWeight: '600' },
+  vehicleText: { fontSize: 13, marginTop: 1 },
+  callBtn: { width: 42, height: 42, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  trackBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 50, borderRadius: 14, gap: 8 },
+  trackBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // Trip cards
+  tripCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  tripCardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  tripIconBox: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  tripTitle: { fontSize: 15, fontWeight: '600' },
   tripDate: { fontSize: 12, marginTop: 2 },
-  tripRouteRow: { flexDirection: 'row', alignItems: 'center' },
-  tripRouteText: { fontSize: 13 },
-  tripRouteDash: { fontSize: 13 },
-  inlineBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: 999 },
-  inlineBadgeDot: { width: 6, height: 6, borderRadius: 3, marginRight: 4 },
-  inlineBadgeText: { fontSize: 12 },
-  dateFilter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.base, borderRadius: 12, marginBottom: spacing.md },
-  dateFilterText: { fontSize: 15 },
-  dateSectionLabel: { fontSize: 17, marginBottom: spacing.md },
-  historyCard: { borderRadius: 16, padding: spacing.base, marginBottom: spacing.md, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  historyTop: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
-  historyRoute: { fontSize: 14 },
-  historyBottom: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  historyVehicleInfo: { flex: 1 },
-  historyVehicle: { fontSize: 14 },
-  historyTime: { fontSize: 12, marginTop: 2 },
+  tripRoute: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    gap: 4,
+  },
+  routeFrom: { fontSize: 14 },
+  routeDashes: { flexDirection: 'row', alignItems: 'center', gap: 3, flex: 1, paddingHorizontal: 4 },
+  dash: { width: 6, height: 2, borderRadius: 1 },
+  routeTo: { fontSize: 14, fontWeight: '600', marginRight: 8 },
+
+  // Action Sheet
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheetContainer: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 16,
+    paddingBottom: 32,
+    paddingTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  sheetTripHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  sheetTripTitle: { fontSize: 15, fontWeight: '700' },
+  sheetTripDate: { fontSize: 12, marginTop: 2 },
+  sheetRouteCard: { borderRadius: 12, padding: 14, marginBottom: 20 },
+  sheetRouteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  sheetRouteLabel: { fontSize: 11, marginBottom: 2 },
+  sheetRouteValue: { fontSize: 13, fontWeight: '600' },
+  sheetRouteDivider: { height: 1, marginVertical: 10 },
+  sheetAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 14,
+    borderBottomWidth: 1,
+  },
+  sheetActionIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  sheetActionText: { flex: 1, fontSize: 15, fontWeight: '600' },
+  sheetDismissBtn: {
+    marginTop: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  sheetDismissText: { fontSize: 15, fontWeight: '600' },
+
+  // Badge
+  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, gap: 4 },
+  badgeDot: { width: 6, height: 6, borderRadius: 3 },
+  badgeText: { fontSize: 11, fontWeight: '600' },
+
+  // History
+  dateFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  dateFilterText: { fontSize: 14, fontWeight: '500' },
+  dateSectionLabel: { fontSize: 15, fontWeight: '700', marginBottom: 12 },
 });
 
 export default TripsScreen;

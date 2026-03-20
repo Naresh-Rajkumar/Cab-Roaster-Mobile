@@ -5,515 +5,237 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Avatar, Button } from '../../components';
-import spacing from '../../theme/spacing.json';
-import typography from '../../theme/typography.json';
-import { SCREENS } from '../../constants';
+import { StatusBadge, Avatar } from '../../components';
+import { MOCK_TRIP_SUMMARY } from '../../services/mock/mockData';
 
-const ROUTE_STOPS = [
-  {
-    id: 's1',
-    time: '9:30 AM',
-    location: 'Madippakkam',
-    employees: [
-      { id: 'e1', name: 'Tommie Strosin', status: 'Picked Up', statusColor: '#4CAF50' },
-    ],
-  },
-  {
-    id: 's2',
-    time: '9:45 AM',
-    location: 'BSR Mall',
-    employees: [
-      { id: 'e2', name: 'James Parker', status: 'No Show', statusColor: '#E53935' },
-      { id: 'e3', name: 'Miss Ian Bosco', status: 'Picked Up', statusColor: '#4CAF50' },
-      { id: 'e4', name: 'Lana Mante', status: 'Picked Up', statusColor: '#4CAF50' },
-    ],
-  },
-  {
-    id: 's3',
-    time: '10:15 AM',
-    location: 'Aavin Bus Stop',
-    employees: [
-      { id: 'e5', name: 'Jim Dicki', status: 'Picked Up', statusColor: '#4CAF50' },
-    ],
-  },
-  {
-    id: 's4',
-    time: '10:30 AM',
-    location: 'vThink Office',
-    employees: [],
-  },
-];
-
-const EmployeeRow = ({ employee, colors, isLast }) => (
-  <View
-    style={[
-      styles.employeeRow,
-      !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border || '#F0F0F0' },
-    ]}
-  >
-    <Avatar size={32} name={employee.name} />
-    <Text style={[styles.employeeName, { color: colors.text }]}>{employee.name}</Text>
-    {employee.status && (
-      <View style={[styles.statusPill, { backgroundColor: employee.statusColor + '1A' }]}>
-        <Text style={[styles.statusPillText, { color: employee.statusColor }]}>
-          {employee.status}
-        </Text>
-      </View>
-    )}
+const MetaStat = ({ label, value, colors }) => (
+  <View style={styles.metaStat}>
+    <Text style={[styles.metaValue, { color: colors.text }]}>{value}</Text>
+    <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>{label}</Text>
   </View>
 );
 
-const RouteStopItem = ({ stop, isLast, colors }) => (
-  <View style={styles.routeStopItem}>
-    {/* Timeline */}
-    <View style={styles.timelineCol}>
-      <View
-        style={[
-          styles.stopDot,
-          {
-            backgroundColor: isLast ? '#6B4EFF' : '#4CAF50',
-            borderColor: isLast ? '#6B4EFF' : '#4CAF50',
-          },
-        ]}
-      />
-      {!isLast && <View style={[styles.stopLine, { borderColor: '#E0E0E0' }]} />}
+const SummaryStopItem = ({ stop, isLast, colors }) => (
+  <View style={styles.stopRow}>
+    <View style={styles.stopTimeline}>
+      <View style={[styles.stopDot, { backgroundColor: '#16a34a' }]} />
+      {!isLast && <View style={[styles.stopLine, { borderLeftColor: colors.border }]} />}
     </View>
-
-    {/* Content */}
-    <View style={styles.stopContent}>
-      <View style={styles.stopHeaderRow}>
-        <Text style={[styles.stopTime, { color: colors.textSecondary }]}>{stop.time}</Text>
-        <Text style={[styles.stopLocation, { color: colors.text }]}>{stop.location}</Text>
+    <View style={[styles.stopCard, { backgroundColor: colors.surface }]}>
+      <View style={styles.stopCardHeader}>
+        <View style={styles.stopCardLeft}>
+          <Text style={[styles.stopTime, { color: colors.textSecondary }]}>{stop.actualTime ?? stop.time}</Text>
+          <Text style={[styles.stopName, { color: colors.text }]}>{stop.name}</Text>
+        </View>
+        {!stop.isDestination && (
+          <StatusBadge status="completed" />
+        )}
       </View>
-
-      {stop.employees.length > 0 && (
-        <View style={[styles.employeeBlock, { backgroundColor: '#F8F8F8', borderRadius: 10, padding: 10, marginTop: 8 }]}>
-          {stop.employees.map((emp, idx) => (
-            <EmployeeRow
-              key={emp.id}
-              employee={emp}
-              colors={colors}
-              isLast={idx === stop.employees.length - 1}
-            />
+      {stop.employees && stop.employees.length > 0 && (
+        <View style={styles.empList}>
+          {stop.employees.map((emp) => (
+            <View key={emp.id} style={styles.empRow}>
+              <Avatar name={emp.name} size={28} />
+              <Text style={[styles.empName, { color: colors.text }]}>{emp.name}</Text>
+              <View style={[styles.empStatus, {
+                backgroundColor: emp.status === 'picked_up' ? '#e8f6ed' : '#fce8e8',
+              }]}>
+                <Text style={[styles.empStatusText, {
+                  color: emp.status === 'picked_up' ? '#16a34a' : '#dc2626',
+                }]}>
+                  {emp.status === 'picked_up' ? 'Picked Up' : 'No Show'}
+                </Text>
+              </View>
+            </View>
           ))}
         </View>
+      )}
+      {stop.isDestination && (
+        <Text style={[styles.destinationLabel, { color: colors.textSecondary }]}>Destination reached</Text>
       )}
     </View>
   </View>
 );
 
-export default function TripSummaryScreen({ navigation, route }) {
+const TripSummaryScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const summary = route?.params?.summary ?? MOCK_TRIP_SUMMARY;
 
   const handleSaveTripData = () => {
-    navigation.navigate(SCREENS.DRIVER_HOME || 'DriverHome');
+    Alert.alert('Trip Saved', 'Trip data has been saved successfully!', [
+      { text: 'OK', onPress: () => navigation.popToTop() },
+    ]);
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border || '#F0F0F0' }]}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-          activeOpacity={0.7}
-        >
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.borderLight }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Trip Data Capture</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ width: 30 }} />
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Trip number label */}
-        <Text style={[styles.tripLabel, { color: colors.text }]}>Trip #231</Text>
-
-        {/* Vehicle info card */}
-        <View style={[styles.vehicleCard, { backgroundColor: colors.card }]}>
-          <View style={[styles.vehicleIconContainer, { backgroundColor: '#EDE7FF' }]}>
-            <Ionicons name="car" size={24} color="#6B4EFF" />
-          </View>
-          <View style={styles.vehicleInfo}>
-            <Text style={[styles.vehiclePlate, { color: colors.text }]}>
-              TN 14 CV 3755 • Ertiga
-            </Text>
-            <Text style={[styles.vehicleTiming, { color: colors.textSecondary }]}>
-              Started @ 9:30 AM  ···  Ended @ 10:30 AM
-            </Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* Trip ID banner */}
+        <View style={[styles.tripBanner, { backgroundColor: colors.primaryContainer }]}>
+          <Text style={[styles.tripNumber, { color: colors.primary }]}>{summary.tripNumber}</Text>
+          <View style={styles.tripMeta}>
+            <View style={styles.tripMetaRow}>
+              <Ionicons name="car-outline" size={14} color={colors.primary} />
+              <Text style={[styles.tripMetaText, { color: colors.primary }]}>
+                {summary.vehicle} • {summary.vehicleType}
+              </Text>
+            </View>
+            <View style={styles.tripMetaRow}>
+              <Ionicons name="time-outline" size={14} color={colors.primary} />
+              <Text style={[styles.tripMetaText, { color: colors.primary }]}>
+                {summary.startedAt} – {summary.endedAt}
+              </Text>
+            </View>
           </View>
         </View>
 
         {/* Stats row */}
-        <View style={styles.statsRow}>
-          <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-            <View style={[styles.statIconWrap, { backgroundColor: '#EDE7FF' }]}>
-              <Ionicons name="people" size={20} color="#6B4EFF" />
-            </View>
-            <Text style={[styles.statValue, { color: colors.text }]}>5</Text>
-            <Text style={[styles.statKey, { color: colors.textSecondary }]}>Pickups</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-            <View style={[styles.statIconWrap, { backgroundColor: '#EDE7FF' }]}>
-              <Ionicons name="location" size={20} color="#6B4EFF" />
-            </View>
-            <Text style={[styles.statValue, { color: colors.text }]}>3</Text>
-            <Text style={[styles.statKey, { color: colors.textSecondary }]}>Stops</Text>
-          </View>
+        <View style={[styles.statsCard, { backgroundColor: colors.surface }]}>
+          <MetaStat label="Pickups" value={summary.totalPickups} colors={colors} />
+          <View style={[styles.statSep, { backgroundColor: colors.borderLight }]} />
+          <MetaStat label="Stops" value={summary.totalStops} colors={colors} />
+          <View style={[styles.statSep, { backgroundColor: colors.borderLight }]} />
+          <MetaStat label="Distance" value={summary.totalDistance} colors={colors} />
+          <View style={[styles.statSep, { backgroundColor: colors.borderLight }]} />
+          <MetaStat label="Route" value="✓ Tracked" colors={colors} />
         </View>
 
-        {/* Total distance card */}
-        <View style={[styles.distanceCard, { backgroundColor: colors.card }]}>
-          <View style={[styles.statIconWrap, { backgroundColor: '#EDE7FF' }]}>
-            <Ionicons name="git-branch" size={20} color="#6B4EFF" />
-          </View>
-          <Text style={[styles.distanceLabel, { color: colors.textSecondary }]}>
-            Total Distance
-          </Text>
-          <Text style={[styles.distanceValue, { color: colors.text }]}>18.2 km</Text>
-        </View>
-
-        {/* Map thumbnail card */}
-        <View style={[styles.mapCard, { backgroundColor: '#D8E8D0' }]}>
-          {/* Map grid lines */}
-          {[...Array(4)].map((_, i) => (
-            <View
-              key={`mh${i}`}
-              style={[styles.mapGridH, { top: `${(i + 1) * 20}%`, backgroundColor: '#C5D9BC' }]}
-            />
-          ))}
-          {[...Array(4)].map((_, i) => (
-            <View
-              key={`mv${i}`}
-              style={[styles.mapGridV, { left: `${(i + 1) * 20}%`, backgroundColor: '#C5D9BC' }]}
-            />
-          ))}
-
-          {/* Route path line */}
-          <View style={[styles.mapRouteLine, { backgroundColor: '#6B4EFF' }]} />
-
-          {/* Overlay text */}
-          <View style={[styles.mapOverlay, { backgroundColor: 'rgba(107,78,255,0.85)' }]}>
-            <Ionicons name="map" size={18} color="#FFFFFF" />
-            <View style={styles.mapOverlayText}>
-              <Text style={styles.mapOverlayTitle}>Route Tracking</Text>
-              <Text style={styles.mapOverlaySubtitle}>Trip path recorded successfully</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Route Stops section */}
+        {/* Route stops */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Route Stops</Text>
-        <View style={[styles.stopsCard, { backgroundColor: colors.card }]}>
-          {ROUTE_STOPS.map((stop, index) => (
-            <RouteStopItem
+        <View style={styles.stopsList}>
+          {summary.routeStops.map((stop, idx) => (
+            <SummaryStopItem
               key={stop.id}
               stop={stop}
-              isLast={index === ROUTE_STOPS.length - 1}
+              isLast={idx === summary.routeStops.length - 1}
               colors={colors}
             />
           ))}
         </View>
 
-        {/* Bottom padding for sticky button */}
-        <View style={{ height: 90 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Sticky Save Button */}
-      <View style={[styles.stickyBottom, { backgroundColor: colors.background }]}>
+      {/* Save button */}
+      <View style={[styles.saveBtnContainer, { backgroundColor: colors.surface, borderTopColor: colors.borderLight }]}>
         <TouchableOpacity
-          style={[styles.saveButton, { backgroundColor: '#6B4EFF' }]}
+          style={[styles.saveBtn, { backgroundColor: colors.primary }]}
           onPress={handleSaveTripData}
           activeOpacity={0.85}
         >
-          <Text style={styles.saveButtonText}>Save Trip Data</Text>
+          <Text style={styles.saveBtnText}>Save Trip Data</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  backButton: {
-    padding: 4,
-    width: 36,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  scrollContent: {
-    padding: 20,
-  },
-  tripLabel: {
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 16,
-  },
-  vehicleCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  vehicleIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  vehicleInfo: {
-    flex: 1,
-  },
-  vehiclePlate: {
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  vehicleTiming: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  statIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  statKey: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  distanceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  distanceLabel: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  distanceValue: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  mapCard: {
-    height: 150,
-    borderRadius: 16,
-    marginBottom: 24,
-    overflow: 'hidden',
-    position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  mapGridH: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 1,
-    opacity: 0.5,
-  },
-  mapGridV: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 1,
-    opacity: 0.5,
-  },
-  mapRouteLine: {
-    position: 'absolute',
-    top: '40%',
-    left: '15%',
-    right: '15%',
-    height: 4,
-    borderRadius: 2,
-    transform: [{ rotate: '-15deg' }],
-    opacity: 0.7,
-  },
-  mapOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 10,
-    borderRadius: 0,
-  },
-  mapOverlayText: {},
-  mapOverlayTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  mapOverlaySubtitle: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 11,
-    fontWeight: '400',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  stopsCard: {
+  backBtn: { padding: 4, marginRight: 12 },
+  headerTitle: { flex: 1, fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  scrollContent: { padding: 16 },
+
+  tripBanner: {
     borderRadius: 16,
     padding: 16,
+    marginBottom: 14,
+  },
+  tripNumber: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  tripMeta: { gap: 4 },
+  tripMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tripMetaText: { fontSize: 13 },
+
+  statsCard: {
+    flexDirection: 'row',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  routeStopItem: {
-    flexDirection: 'row',
-    marginBottom: 4,
-  },
-  timelineCol: {
-    alignItems: 'center',
-    width: 20,
-    marginRight: 14,
-  },
-  stopDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    marginTop: 2,
-  },
-  stopLine: {
+  metaStat: { flex: 1, alignItems: 'center' },
+  metaValue: { fontSize: 16, fontWeight: '700' },
+  metaLabel: { fontSize: 11, marginTop: 2 },
+  statSep: { width: 1, height: 36 },
+
+  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 14 },
+  stopsList: {},
+
+  stopRow: { flexDirection: 'row', gap: 12 },
+  stopTimeline: { alignItems: 'center', width: 20 },
+  stopDot: { width: 12, height: 12, borderRadius: 6, marginTop: 16 },
+  stopLine: { flex: 1, borderLeftWidth: 2, borderStyle: 'dashed', marginTop: 4, minHeight: 24 },
+  stopCard: {
     flex: 1,
-    width: 2,
-    borderLeftWidth: 2,
-    borderStyle: 'dashed',
-    minHeight: 24,
-    marginTop: 4,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  stopContent: {
-    flex: 1,
-    paddingBottom: 16,
-  },
-  stopHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stopTime: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
-  stopLocation: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  employeeBlock: {},
-  employeeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-  },
-  employeeName: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 20,
-  },
-  statusPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  stickyBottom: {
+  stopCardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  stopCardLeft: {},
+  stopTime: { fontSize: 11, marginBottom: 2 },
+  stopName: { fontSize: 15, fontWeight: '700' },
+  empList: { marginTop: 10, gap: 8 },
+  empRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  empName: { flex: 1, fontSize: 13, fontWeight: '500' },
+  empStatus: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  empStatusText: { fontSize: 11, fontWeight: '600' },
+  destinationLabel: { fontSize: 13, marginTop: 4 },
+
+  saveBtnContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 20,
-    paddingBottom: 28,
+    paddingHorizontal: 16,
+    paddingBottom: 32,
     paddingTop: 12,
+    borderTopWidth: 1,
   },
-  saveButton: {
-    height: 52,
+  saveBtn: {
+    height: 54,
     borderRadius: 14,
-    justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#6B4EFF',
+    justifyContent: 'center',
+    shadowColor: '#643ee8',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 6,
   },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
+
+export default TripSummaryScreen;

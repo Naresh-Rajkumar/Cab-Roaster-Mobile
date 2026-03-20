@@ -1,5 +1,5 @@
-export const APP_NAME = 'vCommute';
-export const APP_TAGLINE = 'Your Ride Starts Here';
+export const APP_NAME = 'Cab Roster';
+export const APP_TAGLINE = 'Employee Transport Management';
 export const API_TIMEOUT = 30000;
 
 export const USER_ROLES = {
@@ -45,6 +45,10 @@ export const TRIP_TYPE = {
 };
 
 export const SCREENS = {
+  // Pre-auth
+  SPLASH: 'Splash',
+  ROLE_SELECTION: 'RoleSelection',
+
   // Onboarding
   ONBOARDING: 'Onboarding',
   WELCOME: 'Welcome',
@@ -68,6 +72,7 @@ export const SCREENS = {
   TRIP_DETAILS: 'TripDetails',
   LOCATION_CHANGE: 'LocationChange',
   SELECT_PICKUP: 'SelectPickup',
+  LOCATION_CHANGE_SUCCESS: 'LocationChangeSuccess',
   CANCEL_REQUEST: 'CancelRequest',
   REPORT_ISSUE: 'ReportIssue',
   NOTIFICATIONS: 'Notifications',

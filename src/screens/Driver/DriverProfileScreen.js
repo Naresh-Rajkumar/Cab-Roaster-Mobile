@@ -1,3 +1,7 @@
+/**
+ * Driver More/Profile Screen
+ * Matches Figma: Driver Handoff → "More" frame
+ */
 import React, { useState } from 'react';
 import {
   View,
@@ -7,351 +11,233 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Avatar } from '../../components';
-import { SCREENS } from '../../constants';
 import { logout } from '../../redux/slices/authSlice';
+import { Avatar } from '../../components';
 
-const APP_VERSION = '1.0.0';
-
-const MENU_SECTIONS = [
-  {
-    title: 'General',
-    items: [
-      {
-        id: 'personal',
-        label: 'Personal Information',
-        icon: 'person-outline',
-        type: 'navigate',
-      },
-      {
-        id: 'shift',
-        label: 'Shift Timing',
-        icon: 'time-outline',
-        type: 'navigate',
-      },
-    ],
-  },
-  {
-    title: 'SOS',
-    items: [
-      {
-        id: 'safety',
-        label: 'Safety',
-        icon: 'shield-checkmark-outline',
-        type: 'navigate',
-        iconColor: '#E53935',
-      },
-    ],
-  },
-  {
-    title: 'Preferences',
-    items: [
-      {
-        id: 'notifications',
-        label: 'Push Notifications',
-        icon: 'notifications-outline',
-        type: 'toggle',
-        toggleKey: 'notifications',
-      },
-      {
-        id: 'help',
-        label: 'Help & Support',
-        icon: 'help-circle-outline',
-        type: 'navigate',
-      },
-      {
-        id: 'darkmode',
-        label: 'Dark Mode',
-        icon: 'moon-outline',
-        type: 'toggle',
-        toggleKey: 'darkMode',
-      },
-    ],
-  },
+const GENERAL_ITEMS = [
+  { id: 'personal', label: 'Personal Information', icon: 'person-outline' },
+  { id: 'shift', label: 'Shift Timing', icon: 'time-outline' },
+];
+const SOS_ITEMS = [
+  { id: 'safety', label: 'Safety', icon: 'shield-outline' },
+];
+const PREF_ITEMS = [
+  { id: 'notifications', label: 'Push Notifications', icon: 'notifications-outline', toggle: true },
+  { id: 'support', label: 'Help & Support', icon: 'help-circle-outline' },
+  { id: 'darkmode', label: 'Dark Mode', icon: 'moon-outline', toggle: true },
 ];
 
-const MenuItem = ({ item, colors, onPress, toggleValue, onToggle }) => {
-  return (
-    <TouchableOpacity
-      style={[styles.menuItem, { borderBottomColor: colors.border || '#F0F0F0' }]}
-      onPress={item.type === 'navigate' ? onPress : undefined}
-      activeOpacity={item.type === 'navigate' ? 0.7 : 1}
-    >
-      <View style={[styles.menuItemIcon, { backgroundColor: (item.iconColor || '#6B4EFF') + '15' }]}>
-        <Ionicons
-          name={item.icon}
-          size={18}
-          color={item.iconColor || '#6B4EFF'}
-        />
-      </View>
-      <Text style={[styles.menuItemLabel, { color: colors.text }]}>{item.label}</Text>
-      {item.type === 'toggle' ? (
-        <Switch
-          value={toggleValue}
-          onValueChange={onToggle}
-          trackColor={{ false: '#E0E0E0', true: '#6B4EFF' }}
-          thumbColor="#FFFFFF"
-        />
-      ) : (
-        <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-      )}
-    </TouchableOpacity>
-  );
-};
-
-const MenuSection = ({ section, colors, onItemPress, toggleStates, onToggle }) => (
-  <View style={styles.menuSection}>
-    <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-      {section.title}
-    </Text>
-    <View style={[styles.sectionCard, { backgroundColor: colors.card }]}>
-      {section.items.map((item, index) => (
-        <MenuItem
-          key={item.id}
-          item={item}
-          colors={colors}
-          onPress={() => onItemPress(item)}
-          toggleValue={item.toggleKey ? toggleStates[item.toggleKey] : false}
-          onToggle={item.toggleKey ? (val) => onToggle(item.toggleKey, val) : undefined}
-          style={index === section.items.length - 1 ? { borderBottomWidth: 0 } : {}}
-        />
-      ))}
+const MenuRow = ({ item, value, onToggle, colors }) => (
+  <View style={[styles.menuRow, { borderBottomColor: colors.borderLight }]}>
+    <View style={[styles.menuIcon, { backgroundColor: '#e8f6ed' }]}>
+      <Ionicons name={item.icon} size={18} color="#16a34a" />
     </View>
+    <Text style={[styles.menuLabel, { color: colors.text }]}>{item.label}</Text>
+    {item.toggle ? (
+      <Switch
+        value={value}
+        onValueChange={onToggle}
+        trackColor={{ false: colors.border, true: '#16a34a' }}
+        thumbColor="#ffffff"
+        ios_backgroundColor={colors.border}
+      />
+    ) : (
+      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+    )}
   </View>
 );
 
-export default function DriverProfileScreen({ navigation }) {
-  const { theme } = useTheme();
+const LogoutModal = ({ visible, onConfirm, onCancel, colors }) => (
+  <Modal transparent visible={visible} animationType="fade">
+    <View style={styles.overlay}>
+      <View style={[styles.modalBox, { backgroundColor: colors.surface }]}>
+        <View style={[styles.modalIcon, { backgroundColor: '#fce8e8' }]}>
+          <Ionicons name="log-out-outline" size={28} color="#dc2626" />
+        </View>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Logout</Text>
+        <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
+          Are you sure you want to logout?
+        </Text>
+        <View style={styles.modalBtns}>
+          <TouchableOpacity
+            style={[styles.cancelBtn, { borderColor: colors.border }]}
+            onPress={onCancel}
+          >
+            <Text style={[styles.cancelBtnText, { color: colors.text }]}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.logoutBtnFill]} onPress={onConfirm}>
+            <Text style={styles.logoutBtnFillText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
+
+const DriverProfileScreen = () => {
+  const { theme, toggleTheme, isDarkMode } = useTheme();
   const colors = theme.colors;
   const dispatch = useDispatch();
-  const user = useSelector((state) => state.auth?.user);
-  const driverName = user?.name || 'Driver';
-
-  const [toggleStates, setToggleStates] = useState({
-    notifications: true,
-    darkMode: false,
-  });
-
-  const handleToggle = (key, value) => {
-    setToggleStates((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleItemPress = (item) => {
-    // Navigate to sub-screens if they exist; otherwise no-op
-    switch (item.id) {
-      case 'personal':
-        // navigation.navigate('PersonalInformation');
-        break;
-      case 'shift':
-        navigation.navigate(SCREENS.REQUEST_CAB_STEP1);
-        break;
-      case 'safety':
-        // navigation.navigate('Safety');
-        break;
-      case 'help':
-        // navigation.navigate('HelpSupport');
-        break;
-      default:
-        break;
-    }
-  };
+  const user = useSelector((state) => state.auth.user);
+  const [notifOn, setNotifOn] = useState(true);
+  const [showLogout, setShowLogout] = useState(false);
 
   const handleLogout = () => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Log Out',
-          style: 'destructive',
-          onPress: () => dispatch(logout()),
-        },
-      ],
-      { cancelable: true }
-    );
+    dispatch(logout());
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.pageHeader}>
-          <Text style={[styles.pageTitle, { color: colors.text }]}>Profile</Text>
-        </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <Text style={[styles.pageTitle, { color: colors.text }]}>More Details</Text>
 
         {/* Profile card */}
-        <View style={[styles.profileCard, { backgroundColor: colors.card }]}>
-          <Avatar size={70} name={driverName} />
-          <View style={styles.profileInfo}>
-            <Text style={[styles.profileName, { color: colors.text }]}>{driverName}</Text>
-            <View style={[styles.roleBadge, { backgroundColor: '#EDE7FF' }]}>
-              <Ionicons name="car" size={12} color="#6B4EFF" />
-              <Text style={[styles.roleText, { color: '#6B4EFF' }]}>Driver</Text>
+        <View style={[styles.profileCard, { backgroundColor: colors.surface }]}>
+          <Avatar name={user?.name ?? 'Celia Hagenes'} size={64} />
+          <View style={styles.profileMeta}>
+            <Text style={[styles.profileName, { color: colors.text }]}>
+              {user?.name ?? 'Celia Hagenes'}
+            </Text>
+            <View style={[styles.driverBadge, { backgroundColor: '#e8f6ed' }]}>
+              <Text style={[styles.driverBadgeText, { color: '#16a34a' }]}>Driver</Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={[styles.editButton, { borderColor: '#6B4EFF', borderWidth: 1.5 }]}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="pencil" size={16} color="#6B4EFF" />
+          <TouchableOpacity style={[styles.editBtn, { borderColor: colors.border }]}>
+            <Text style={[styles.editBtnText, { color: colors.primary }]}>Edit</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Menu sections */}
-        {MENU_SECTIONS.map((section) => (
-          <MenuSection
-            key={section.title}
-            section={section}
-            colors={colors}
-            onItemPress={handleItemPress}
-            toggleStates={toggleStates}
-            onToggle={handleToggle}
-          />
-        ))}
+        {/* Sections */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>GENERAL</Text>
+        <View style={[styles.group, { backgroundColor: colors.surface }]}>
+          {GENERAL_ITEMS.map((item) => (
+            <MenuRow key={item.id} item={item} colors={colors} />
+          ))}
+        </View>
 
-        {/* Logout button */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>SOS</Text>
+        <View style={[styles.group, { backgroundColor: colors.surface }]}>
+          {SOS_ITEMS.map((item) => (
+            <MenuRow key={item.id} item={item} colors={colors} />
+          ))}
+        </View>
+
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PREFERENCES</Text>
+        <View style={[styles.group, { backgroundColor: colors.surface }]}>
+          {PREF_ITEMS.map((item) => (
+            <MenuRow
+              key={item.id}
+              item={item}
+              colors={colors}
+              value={item.id === 'darkmode' ? isDarkMode : item.id === 'notifications' ? notifOn : false}
+              onToggle={item.id === 'darkmode' ? toggleTheme : item.id === 'notifications' ? setNotifOn : undefined}
+            />
+          ))}
+        </View>
+
+        {/* Logout */}
         <TouchableOpacity
-          style={[styles.logoutButton, { backgroundColor: '#FFEBEE' }]}
-          onPress={handleLogout}
+          style={[styles.logoutBtn, { borderColor: '#dc2626' }]}
+          onPress={() => setShowLogout(true)}
           activeOpacity={0.8}
         >
-          <Ionicons name="log-out-outline" size={20} color="#E53935" />
-          <Text style={[styles.logoutText, { color: '#E53935' }]}>Log Out</Text>
+          <Ionicons name="log-out-outline" size={20} color="#dc2626" />
+          <Text style={styles.logoutBtnText}>Logout</Text>
         </TouchableOpacity>
 
-        {/* Version */}
-        <Text style={[styles.versionText, { color: colors.textSecondary }]}>
-          Version {APP_VERSION}
-        </Text>
-
-        <View style={{ height: 40 }} />
+        <Text style={[styles.version, { color: colors.textTertiary }]}>Version: v1.2.3</Text>
+        <View style={{ height: 80 }} />
       </ScrollView>
+
+      <LogoutModal
+        visible={showLogout}
+        onConfirm={handleLogout}
+        onCancel={() => setShowLogout(false)}
+        colors={colors}
+      />
     </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 24,
-  },
-  pageHeader: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-  pageTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-  },
+  container: { flex: 1 },
+  scroll: { paddingBottom: 16 },
+  pageTitle: { fontSize: 20, fontWeight: '700', paddingHorizontal: 16, paddingTop: 16, marginBottom: 16 },
+
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 24,
+    marginHorizontal: 16,
     borderRadius: 16,
     padding: 16,
     gap: 14,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  profileInfo: {
-    flex: 1,
-    gap: 6,
-  },
-  profileName: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  roleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    gap: 4,
-  },
-  roleText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  editButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  menuSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
-  sectionCard: {
-    borderRadius: 16,
+  profileMeta: { flex: 1 },
+  profileName: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
+  driverBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
+  driverBadgeText: { fontSize: 12, fontWeight: '600' },
+  editBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
+  editBtnText: { fontSize: 13, fontWeight: '600' },
+
+  sectionLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.8, marginHorizontal: 16, marginBottom: 6, marginTop: 4 },
+  group: {
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginBottom: 16,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
     elevation: 1,
   },
-  menuItem: {
+  menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    borderBottomWidth: 1,
     gap: 12,
+    borderBottomWidth: 1,
   },
-  menuItemIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  menuItemLabel: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  logoutButton: {
+  menuIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  menuLabel: { flex: 1, fontSize: 14, fontWeight: '500' },
+
+  logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 20,
-    marginTop: 8,
-    paddingVertical: 15,
+    marginHorizontal: 16,
+    height: 50,
     borderRadius: 14,
+    borderWidth: 1.5,
     gap: 8,
+    marginBottom: 12,
   },
-  logoutText: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  versionText: {
-    textAlign: 'center',
-    fontSize: 12,
-    fontWeight: '400',
-    marginTop: 16,
-  },
+  logoutBtnText: { color: '#dc2626', fontSize: 15, fontWeight: '700' },
+  version: { textAlign: 'center', fontSize: 12 },
+
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalBox: { width: 310, borderRadius: 20, padding: 24, alignItems: 'center' },
+  modalIcon: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  modalBody: { fontSize: 13, textAlign: 'center', marginBottom: 20 },
+  modalBtns: { flexDirection: 'row', gap: 12, width: '100%' },
+  cancelBtn: { flex: 1, height: 44, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  cancelBtnText: { fontSize: 14, fontWeight: '600' },
+  logoutBtnFill: { flex: 1, height: 44, borderRadius: 12, backgroundColor: '#dc2626', alignItems: 'center', justifyContent: 'center' },
+  logoutBtnFillText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });
+
+export default DriverProfileScreen;

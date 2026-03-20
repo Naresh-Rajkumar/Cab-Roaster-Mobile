@@ -67,7 +67,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
 
         {/* Progress Bar */}
         <View style={[styles.progressBarTrack, { backgroundColor: colors.border || '#E5E7EB' }]}>
-          <View style={[styles.progressBarFill, { backgroundColor: colors.primary, width: '50%' }]} />
+          <View style={[styles.progressBarFill, { backgroundColor: colors.primary, width: '100%' }]} />
         </View>
 
         {/* Work Location */}

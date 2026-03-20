@@ -9,8 +9,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
-import { SCREENS } from '../../constants';
+import { setUser } from '../../redux/slices/authSlice';
 import spacing from '../../theme/spacing.json';
 import typography from '../../theme/typography.json';
 
@@ -19,6 +20,7 @@ const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const RequestCabStep2Screen = ({ navigation }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
 
   const [shiftTiming] = useState('10:00AM - 7:00PM');
   const [selectedDays, setSelectedDays] = useState(['Mon', 'Wed', 'Thu', 'Fri']);
@@ -44,16 +46,7 @@ const RequestCabStep2Screen = ({ navigation }) => {
 
   const handleSendRequest = () => {
     setSubmitted(true);
-    Alert.alert(
-      'Request Submitted!',
-      'Your cab scheduling request has been submitted successfully.',
-      [
-        {
-          text: 'OK',
-          onPress: () => navigation.navigate(SCREENS.HOME),
-        },
-      ]
-    );
+    dispatch(setUser({ name: 'Ragha Malliga', role: 'employee', employeeId: 'VT216' }));
   };
 
   const handleBack = () => {
@@ -128,7 +121,7 @@ const RequestCabStep2Screen = ({ navigation }) => {
               },
             ]}
           >
-            1 of 2
+            2 of 2
           </Text>
         </View>
 
@@ -139,7 +132,7 @@ const RequestCabStep2Screen = ({ navigation }) => {
           <View
             style={[
               styles.progressBarFill,
-              { backgroundColor: colors.primary, width: '60%' },
+              { backgroundColor: colors.primary, width: '50%' },
             ]}
           />
         </View>

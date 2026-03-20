@@ -1,571 +1,448 @@
+/**
+ * Live Tracking Screen — Figma: Employee Handoff 09/02/2026 "Track Location"
+ * Two states: map + minimal panel, and expanded ride-detail sheet.
+ */
 import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
   ScrollView,
+  Dimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Card, Avatar, StatusBadge, Button, Header } from '../../components';
-import StopItem from '../../components/items/StopItem/StopItem';
-import spacing from '../../theme/spacing.json';
-import typography from '../../theme/typography.json';
+import { Avatar } from '../../components';
 import { SCREENS } from '../../constants';
+import { MOCK_ROUTE_STOPS } from '../../services/mock/mockData';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_H } = Dimensions.get('window');
 
-const MOCK_STOPS = [
-  {
-    id: '1',
-    name: 'Marathahalli Bridge',
-    address: 'Outer Ring Road, Marathahalli',
-    time: '08:30 AM',
-    employeeCount: 1,
-    distance: '2.3 km',
-    isCompleted: true,
-    isCurrent: false,
-  },
-  {
-    id: '2',
-    name: 'Kundalahalli Gate',
-    address: 'Kundalahalli Main Rd, Brookefield',
-    time: '08:40 AM',
-    employeeCount: 1,
-    distance: '1.5 km',
-    isCompleted: false,
-    isCurrent: true,
-  },
-  {
-    id: '3',
-    name: 'ITPL Main Road',
-    address: 'ITPL Main Road, Whitefield',
-    time: '08:50 AM',
-    employeeCount: 1,
-    distance: '3.1 km',
-    isCompleted: false,
-    isCurrent: false,
-  },
-  {
-    id: '4',
-    name: 'Manyata Tech Park',
-    address: 'Manyata Embassy Business Park',
-    time: '09:15 AM',
-    employeeCount: 0,
-    distance: '8.2 km',
-    isCompleted: false,
-    isCurrent: false,
-  },
+const MOCK_RIDE = {
+  tripNumber: 'Trip #482',
+  vehicleNo: 'TN 14 CV 3755',
+  vehicleType: 'Ertiga',
+  status: 'active',
+  driverName: 'Rogelio Adams',
+  nextStop: 'Sholinganallur',
+  eta: '15 mins',
+  currentLocation: 'Chennai One IT SEZ',
+  currentAddress: '200 Feet Radial Road, MCN Nagar Extension, Pallavaram, Thoraipakkam, Tamilnadu',
+};
+
+const ROUTE_STOPS = [
+  { id: 's1', time: '9:30 AM', name: 'Madipakkam',    status: 'picked_up',    statusLabel: 'Picked Up',     statusColor: '#16a34a' },
+  { id: 's2', time: '9:45 AM', name: 'BSR Mall',       status: 'arriving',     statusLabel: 'Arriving Soon', statusColor: '#643ee8' },
+  { id: 's3', time: '10:15 AM', name: 'Aavin Bus Stop', status: 'pending',     statusLabel: 'Pending',       statusColor: '#9ca3af' },
+  { id: 's4', time: '10:30 AM', name: 'vThink Office',  status: 'pending',     statusLabel: 'Pending',       statusColor: '#9ca3af' },
 ];
 
+// ─── Fake Map Render ──────────────────────────────────────────────────────────
+const FakeMap = ({ colors }) => (
+  <View style={[styles.mapView, { backgroundColor: '#d1d5db' }]}>
+    {/* Base road grid */}
+    {[20, 38, 55, 72].map((top) => (
+      <View key={`h${top}`} style={[styles.mapRoadH, { top: `${top}%`, backgroundColor: '#e5e7eb' }]} />
+    ))}
+    {[25, 48, 68].map((left) => (
+      <View key={`v${left}`} style={[styles.mapRoadV, { left: `${left}%`, backgroundColor: '#e5e7eb' }]} />
+    ))}
+    {/* Route line - solid green (completed) */}
+    <View style={styles.routeSolidLine} />
+    {/* Route line - dashed purple (remaining) */}
+    {[0, 14, 28, 42, 56, 70].map((top) => (
+      <View key={`d${top}`} style={[styles.routeDashSegment, { top: `${top + 30}%` }]} />
+    ))}
+    {/* Pickup dot */}
+    <View style={[styles.mapPickupDot, { backgroundColor: '#16a34a', borderColor: '#fff' }]} />
+    {/* Car marker */}
+    <View style={[styles.mapCarMarker, { backgroundColor: colors.primaryContainer, borderColor: colors.primary }]}>
+      <Ionicons name="car" size={18} color={colors.primary} />
+    </View>
+    {/* ETA badge on route */}
+    <View style={[styles.routeEtaBadge, { backgroundColor: colors.primary }]}>
+      <View style={[styles.routeEtaDot, { backgroundColor: '#fff' }]} />
+      <Text style={styles.routeEtaText}>15 mins</Text>
+    </View>
+    {/* Lower ETA badge */}
+    <View style={[styles.routeEtaBadge2, { backgroundColor: colors.primary }]}>
+      <View style={[styles.routeEtaDot, { backgroundColor: '#fff' }]} />
+      <Text style={styles.routeEtaText}>25 mins</Text>
+    </View>
+    {/* Dest dot */}
+    <View style={[styles.mapDestDot, { backgroundColor: colors.primary, borderColor: '#fff' }]} />
+  </View>
+);
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 const LiveTrackingScreen = ({ navigation, route }) => {
-  const { ride } = route.params || {};
   const { theme } = useTheme();
   const colors = theme.colors;
   const [showDetails, setShowDetails] = useState(false);
 
-  const driverInfo = {
-    name: ride?.driverName || 'Rajesh Kumar',
-    phone: '+91 98765 00001',
-    vehicleNo: ride?.vehicleNo || 'KA 01 AB 1234',
-    vehicleType: ride?.vehicleType || 'Toyota Innova',
-    rating: 4.8,
-  };
-
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      edges={['top']}
-    >
-      {/* Header overlay */}
-      <View style={[styles.mapHeader, { backgroundColor: colors.surface }]}>
+    <View style={styles.container}>
+      {/* Header overlay on map */}
+      <View style={[styles.header]}>
         <TouchableOpacity
+          style={[styles.headerBtn, { backgroundColor: '#fff' }]}
           onPress={() => navigation.goBack()}
-          style={[
-            styles.backBtn,
-            { backgroundColor: colors.surface },
-          ]}
         >
-          <Ionicons name="arrow-back" size={22} color={colors.text} />
+          <Ionicons name="arrow-back" size={20} color="#1a1a2e" />
         </TouchableOpacity>
-        <Text
-          style={[
-            styles.headerTitle,
-            {
-              color: colors.text,
-              fontFamily: typography.fontFamily.semiBold,
-            },
-          ]}
-        >
-          Live Tracking
-        </Text>
-        <TouchableOpacity
-          style={[
-            styles.recenterBtn,
-            { backgroundColor: colors.surface },
-          ]}
-        >
-          <Ionicons name="locate" size={22} color={colors.primary} />
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Live Tracking</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* Map placeholder */}
-      <View
-        style={[
-          styles.mapContainer,
-          { backgroundColor: colors.surfaceVariant },
-        ]}
-      >
-        <View style={[styles.mapPlaceholder]}>
-          <View
-            style={[
-              styles.markerContainer,
-              { backgroundColor: colors.primary },
-            ]}
-          >
-            <Text style={styles.markerText}>V</Text>
-          </View>
-          <Text
-            style={[
-              styles.mapPlaceholderText,
-              {
-                color: colors.textTertiary,
-                fontFamily: typography.fontFamily.regular,
-              },
-            ]}
-          >
-            Map View - Integrate with react-native-maps
-          </Text>
-        </View>
-      </View>
+      {/* Map */}
+      <FakeMap colors={colors} />
 
-      {/* Bottom Sheet */}
-      <View
-        style={[
-          styles.bottomSheet,
-          { backgroundColor: colors.surface },
-        ]}
-      >
-        <View style={styles.sheetHandle}>
-          <View
-            style={[
-              styles.handleBar,
-              { backgroundColor: colors.border },
-            ]}
-          />
-        </View>
+      {/* Bottom Panel */}
+      {!showDetails ? (
+        <View style={[styles.bottomPanel, { backgroundColor: colors.surface }]}>
+          <View style={[styles.handleBar, { backgroundColor: colors.border }]} />
 
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Ride Info */}
-          <View style={styles.rideInfoSection}>
-            <View style={styles.rideInfoRow}>
-              <View>
-                <Text
-                  style={[
-                    styles.rideLabel,
-                    {
-                      color: colors.textSecondary,
-                      fontFamily: typography.fontFamily.regular,
-                    },
-                  ]}
-                >
-                  Ride Details
-                </Text>
-                <Text
-                  style={[
-                    styles.rideId,
-                    {
-                      color: colors.text,
-                      fontFamily: typography.fontFamily.bold,
-                    },
-                  ]}
-                >
-                  {ride?.id || 'TR-1042'}
-                </Text>
-              </View>
-              <StatusBadge status="in_progress" label="On the way" size="md" />
+          {/* Next Stop */}
+          <TouchableOpacity
+            style={styles.nextStopRow}
+            onPress={() => setShowDetails(true)}
+            activeOpacity={0.9}
+          >
+            <View style={[styles.nextStopIcon, { backgroundColor: colors.primaryContainer }]}>
+              <Ionicons name="person-outline" size={18} color={colors.primary} />
             </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.nextStopLabel, { color: colors.textSecondary }]}>Next Stop</Text>
+              <Text style={[styles.nextStopName, { color: colors.text }]}>{MOCK_RIDE.nextStop}</Text>
+            </View>
+            <View style={[styles.etaBadge, { backgroundColor: colors.primaryContainer }]}>
+              <View style={[styles.etaDot, { backgroundColor: colors.primary }]} />
+              <Text style={[styles.etaText, { color: colors.primary }]}>{MOCK_RIDE.eta}</Text>
+            </View>
+          </TouchableOpacity>
 
-            {/* Route Stops */}
-            <View style={styles.routeStops}>
-              <View style={styles.routeStop}>
-                <View
-                  style={[
-                    styles.stopDot,
-                    { backgroundColor: colors.success },
-                  ]}
-                />
-                <View style={styles.stopTextContainer}>
-                  <Text
-                    style={[
-                      styles.stopLabel,
-                      {
-                        color: colors.textTertiary,
-                        fontFamily: typography.fontFamily.regular,
-                      },
-                    ]}
-                  >
-                    Pickup
-                  </Text>
-                  <Text
-                    style={[
-                      styles.stopName,
-                      {
-                        color: colors.text,
-                        fontFamily: typography.fontFamily.medium,
-                      },
-                    ]}
-                  >
-                    {ride?.pickupLocation || 'Marathahalli Bridge'}
-                  </Text>
-                </View>
-                <Text
-                  style={[
-                    styles.stopTime,
-                    {
-                      color: colors.primary,
-                      fontFamily: typography.fontFamily.semiBold,
-                    },
-                  ]}
-                >
-                  {ride?.scheduledTime || '08:30 AM'}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.connectorLine,
-                  { borderLeftColor: colors.border },
-                ]}
-              />
-              <View style={styles.routeStop}>
-                <View
-                  style={[
-                    styles.stopDot,
-                    { backgroundColor: colors.error },
-                  ]}
-                />
-                <View style={styles.stopTextContainer}>
-                  <Text
-                    style={[
-                      styles.stopLabel,
-                      {
-                        color: colors.textTertiary,
-                        fontFamily: typography.fontFamily.regular,
-                      },
-                    ]}
-                  >
-                    Drop
-                  </Text>
-                  <Text
-                    style={[
-                      styles.stopName,
-                      {
-                        color: colors.text,
-                        fontFamily: typography.fontFamily.medium,
-                      },
-                    ]}
-                  >
-                    {ride?.dropLocation || 'Manyata Tech Park'}
-                  </Text>
-                </View>
-                <Text
-                  style={[
-                    styles.stopTime,
-                    {
-                      color: colors.textSecondary,
-                      fontFamily: typography.fontFamily.regular,
-                    },
-                  ]}
-                >
-                  09:15 AM
-                </Text>
-              </View>
+          <View style={[styles.divider, { backgroundColor: colors.borderLight }]} />
+
+          {/* Driver row */}
+          <View style={styles.driverRow}>
+            <Avatar name={MOCK_RIDE.driverName} size={44} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.driverName, { color: colors.text }]}>{MOCK_RIDE.driverName}</Text>
+              <Text style={[styles.vehicleText, { color: colors.textSecondary }]}>
+                {MOCK_RIDE.vehicleNo}{' '}
+                <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
+                {MOCK_RIDE.vehicleType}
+              </Text>
+            </View>
+            <TouchableOpacity style={[styles.callBtn, { borderColor: colors.borderLight }]}>
+              <Ionicons name="call-outline" size={18} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        /* Ride Details Sheet */
+        <View style={[styles.detailsSheet, { backgroundColor: colors.surface }]}>
+          <View style={[styles.handleBar, { backgroundColor: colors.border }]} />
+
+          <View style={styles.detailsHeader}>
+            <Text style={[styles.detailsTitle, { color: colors.text }]}>Ride Details</Text>
+            <TouchableOpacity onPress={() => setShowDetails(false)}>
+              <Ionicons name="close" size={22} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Trip meta */}
+          <View style={styles.tripMeta}>
+            <View>
+              <Text style={[styles.tripNumber, { color: colors.text }]}>{MOCK_RIDE.tripNumber}</Text>
+              <Text style={[styles.vehicleText, { color: colors.textSecondary }]}>
+                {MOCK_RIDE.vehicleNo}{' '}
+                <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
+                {MOCK_RIDE.vehicleType}
+              </Text>
+            </View>
+            <View style={[styles.activeBadge, { backgroundColor: '#dcfce7' }]}>
+              <View style={[styles.activeDot, { backgroundColor: '#16a34a' }]} />
+              <Text style={[styles.activeText, { color: '#16a34a' }]}>Active</Text>
             </View>
           </View>
 
-          {/* Driver Card */}
-          <View
-            style={[
-              styles.driverCard,
-              { borderTopColor: colors.divider },
-            ]}
-          >
+          <Text style={[styles.routeStopsTitle, { color: colors.text }]}>Route Stops</Text>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {ROUTE_STOPS.map((stop, idx) => (
+              <View key={stop.id}>
+                <View style={styles.stopRow}>
+                  <View style={styles.stopTimelineCol}>
+                    <View style={[
+                      styles.stopCircle,
+                      {
+                        borderColor: stop.status === 'pending' ? colors.border : stop.statusColor,
+                        backgroundColor: stop.status === 'pending' ? 'transparent' : stop.statusColor + '20',
+                      },
+                    ]}>
+                      {(stop.status === 'picked_up' || stop.status === 'arriving') && (
+                        <View style={[styles.stopCircleInner, { backgroundColor: stop.statusColor }]} />
+                      )}
+                    </View>
+                    {idx < ROUTE_STOPS.length - 1 && (
+                      <View style={[styles.stopLine, { borderColor: colors.border }]} />
+                    )}
+                  </View>
+                  <View style={styles.stopContent}>
+                    <View style={styles.stopContentTop}>
+                      <Text style={[styles.stopTime, { color: colors.textSecondary }]}>{stop.time}</Text>
+                      <Text style={[styles.stopStatusText, { color: stop.statusColor }]}>{stop.statusLabel}</Text>
+                    </View>
+                    <Text style={[styles.stopName, { color: colors.text }]}>{stop.name}</Text>
+
+                    {/* Current location card (after BSR Mall) */}
+                    {stop.id === 's2' && (
+                      <View style={[styles.currentLocCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <View style={styles.currentLocRow}>
+                          <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
+                          <Text style={[styles.currentLocLabel, { color: colors.textSecondary }]}>Current Location</Text>
+                        </View>
+                        <Text style={[styles.currentLocName, { color: colors.text }]}>{MOCK_RIDE.currentLocation}</Text>
+                        <Text style={[styles.currentLocAddress, { color: colors.textSecondary }]}>{MOCK_RIDE.currentAddress}</Text>
+                        <TouchableOpacity
+                          style={[styles.trackBtn, { backgroundColor: colors.primary }]}
+                          onPress={() => navigation.navigate(SCREENS.CAB_ARRIVED)}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons name="navigate-outline" size={16} color="#fff" />
+                          <Text style={styles.trackBtnText}>Track Ride</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+            ))}
+
+            {/* Driver footer */}
+            <View style={[styles.divider, { backgroundColor: colors.borderLight, marginVertical: 12 }]} />
             <View style={styles.driverRow}>
-              <Avatar name={driverInfo.name} size={44} />
-              <View style={styles.driverDetails}>
-                <Text
-                  style={[
-                    styles.driverName,
-                    {
-                      color: colors.text,
-                      fontFamily: typography.fontFamily.semiBold,
-                    },
-                  ]}
-                >
-                  {driverInfo.name}
+              <Avatar name={MOCK_RIDE.driverName} size={44} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.driverName, { color: colors.text }]}>{MOCK_RIDE.driverName}</Text>
+                <Text style={[styles.vehicleText, { color: colors.textSecondary }]}>
+                  {MOCK_RIDE.vehicleNo}{' '}
+                  <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
+                  {MOCK_RIDE.vehicleType}
                 </Text>
-                <View style={styles.vehicleRow}>
-                  <Text
-                    style={[
-                      styles.vehicleText,
-                      {
-                        color: colors.textSecondary,
-                        fontFamily: typography.fontFamily.regular,
-                      },
-                    ]}
-                  >
-                    {driverInfo.vehicleType} | {driverInfo.vehicleNo}
-                  </Text>
-                </View>
               </View>
-              <View style={styles.driverActions}>
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    { backgroundColor: colors.successBackground },
-                  ]}
-                >
-                  <Ionicons name="call" size={18} color={colors.success} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    { backgroundColor: colors.primaryContainer },
-                  ]}
-                >
-                  <Ionicons
-                    name="chatbubble"
-                    size={18}
-                    color={colors.primary}
-                  />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity style={[styles.callBtn, { borderColor: colors.borderLight }]}>
+                <Ionicons name="call-outline" size={18} color={colors.text} />
+              </TouchableOpacity>
             </View>
-
-            {/* OTP */}
-            <View
-              style={[
-                styles.otpBar,
-                { backgroundColor: colors.primaryContainer },
-              ]}
-            >
-              <Ionicons name="key-outline" size={16} color={colors.primary} />
-              <Text
-                style={[
-                  styles.otpText,
-                  {
-                    color: colors.primary,
-                    fontFamily: typography.fontFamily.medium,
-                  },
-                ]}
-              >
-                Share OTP with driver:
-              </Text>
-              <Text
-                style={[
-                  styles.otpCode,
-                  {
-                    color: colors.primary,
-                    fontFamily: typography.fontFamily.bold,
-                  },
-                ]}
-              >
-                {ride?.otp || '4521'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Action Buttons */}
-          <View style={styles.actionButtons}>
-            <Button
-              title="Track Ride"
-              onPress={() => {}}
-              fullWidth
-              size="lg"
-              icon={
-                <Ionicons name="navigate" size={16} color="#FFFFFF" />
-              }
-            />
-          </View>
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+            <View style={{ height: 32 }} />
+          </ScrollView>
+        </View>
+      )}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  mapHeader: {
+  container: { flex: 1, backgroundColor: '#d1d5db' },
+
+  // Header
+  header: {
+    position: 'absolute',
+    top: 52,
+    left: 0,
+    right: 0,
+    zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
-    zIndex: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
-  backBtn: {
+  headerBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  headerTitle: {
-    fontSize: typography.fontSize.lg,
-  },
-  recenterBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mapContainer: {
-    height: SCREEN_HEIGHT * 0.32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mapPlaceholder: {
-    alignItems: 'center',
-  },
-  markerContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  markerText: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '700',
-  },
-  mapPlaceholderText: {
-    fontSize: typography.fontSize.sm,
-  },
-  bottomSheet: {
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '700', color: '#1a1a2e' },
+
+  // Map
+  mapView: {
     flex: 1,
-    borderTopLeftRadius: spacing.borderRadius.xl,
-    borderTopRightRadius: spacing.borderRadius.xl,
-    marginTop: -spacing.lg,
-    paddingHorizontal: spacing.base,
+    position: 'relative',
   },
-  sheetHandle: {
+  mapRoadH: { position: 'absolute', left: 0, right: 0, height: 10 },
+  mapRoadV: { position: 'absolute', top: 0, bottom: 0, width: 10 },
+  routeSolidLine: {
+    position: 'absolute',
+    width: 4,
+    left: '48%',
+    top: '8%',
+    height: '22%',
+    backgroundColor: '#16a34a',
+    borderRadius: 2,
+  },
+  routeDashSegment: {
+    position: 'absolute',
+    width: 4,
+    left: '48%',
+    height: 12,
+    backgroundColor: '#643ee8',
+    borderRadius: 2,
+    opacity: 0.8,
+  },
+  mapPickupDot: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 3,
+    top: '6%',
+    left: '46.5%',
+  },
+  mapCarMarker: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 2,
     alignItems: 'center',
-    paddingVertical: spacing.md,
+    justifyContent: 'center',
+    top: '25%',
+    left: '43%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  routeEtaBadge: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    top: '40%',
+    left: '53%',
+    gap: 4,
+  },
+  routeEtaBadge2: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    top: '62%',
+    left: '53%',
+    gap: 4,
+  },
+  routeEtaDot: { width: 6, height: 6, borderRadius: 3 },
+  routeEtaText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  mapDestDot: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 3,
+    top: '75%',
+    left: '46.5%',
+  },
+
+  // Bottom panel
+  bottomPanel: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
   },
   handleBar: {
     width: 40,
     height: 4,
     borderRadius: 2,
+    alignSelf: 'center',
+    marginVertical: 12,
   },
-  rideInfoSection: {
-    marginBottom: spacing.base,
+  nextStopRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 12 },
+  nextStopIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  nextStopLabel: { fontSize: 12 },
+  nextStopName: { fontSize: 16, fontWeight: '700' },
+  etaBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, gap: 4 },
+  etaDot: { width: 6, height: 6, borderRadius: 3 },
+  etaText: { fontSize: 12, fontWeight: '700' },
+  divider: { height: 1 },
+  driverRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 12 },
+  driverName: { fontSize: 15, fontWeight: '600' },
+  vehicleText: { fontSize: 13, marginTop: 1 },
+  callBtn: { width: 44, height: 44, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+
+  // Details sheet
+  detailsSheet: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    maxHeight: SCREEN_H * 0.72,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
   },
-  rideInfoRow: {
+  detailsHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.base,
+    paddingBottom: 12,
   },
-  rideLabel: {
-    fontSize: typography.fontSize.sm,
+  detailsTitle: { fontSize: 18, fontWeight: '700' },
+  tripMeta: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 },
+  tripNumber: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
+  activeBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, gap: 4 },
+  activeDot: { width: 6, height: 6, borderRadius: 3 },
+  activeText: { fontSize: 12, fontWeight: '600' },
+  routeStopsTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12 },
+
+  // Stop items
+  stopRow: { flexDirection: 'row', gap: 12 },
+  stopTimelineCol: { alignItems: 'center', width: 20 },
+  stopCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  stopCircleInner: { width: 10, height: 10, borderRadius: 5 },
+  stopLine: { flex: 1, borderLeftWidth: 1.5, borderStyle: 'dashed', minHeight: 30 },
+  stopContent: { flex: 1, paddingBottom: 8 },
+  stopContentTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  stopTime: { fontSize: 12, marginBottom: 2 },
+  stopStatusText: { fontSize: 12, fontWeight: '600' },
+  stopName: { fontSize: 15, fontWeight: '600', marginBottom: 4 },
+
+  // Current location card
+  currentLocCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 8,
+    marginBottom: 4,
   },
-  rideId: {
-    fontSize: typography.fontSize.lg,
-    marginTop: 2,
-  },
-  routeStops: {
-    paddingLeft: spacing.xs,
-  },
-  routeStop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  stopDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: spacing.md,
-  },
-  stopTextContainer: {
-    flex: 1,
-  },
-  stopLabel: {
-    fontSize: typography.fontSize.xs,
-    textTransform: 'uppercase',
-  },
-  stopName: {
-    fontSize: typography.fontSize.md,
-    marginTop: 2,
-  },
-  stopTime: {
-    fontSize: typography.fontSize.sm,
-  },
-  connectorLine: {
-    borderLeftWidth: 1.5,
-    borderStyle: 'dashed',
-    height: 20,
-    marginLeft: 4,
-  },
-  driverCard: {
-    borderTopWidth: 1,
-    paddingTop: spacing.base,
-    marginBottom: spacing.base,
-  },
-  driverRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  driverDetails: {
-    flex: 1,
-    marginLeft: spacing.md,
-  },
-  driverName: {
-    fontSize: typography.fontSize.md,
-  },
-  vehicleRow: {
-    marginTop: 2,
-  },
-  vehicleText: {
-    fontSize: typography.fontSize.sm,
-  },
-  driverActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  actionBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  otpBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: spacing.borderRadius.sm,
-    gap: spacing.sm,
-  },
-  otpText: {
-    fontSize: typography.fontSize.sm,
-  },
-  otpCode: {
-    fontSize: typography.fontSize.lg,
-    letterSpacing: 4,
-  },
-  actionButtons: {
-    paddingBottom: spacing.xxl,
-  },
+  currentLocRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
+  currentLocLabel: { fontSize: 12 },
+  currentLocName: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  currentLocAddress: { fontSize: 12, lineHeight: 18, marginBottom: 10 },
+  trackBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 44, borderRadius: 12, gap: 6 },
+  trackBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });
 
 export default LiveTrackingScreen;

@@ -1,12 +1,11 @@
 /**
  * MOCK AUTH SERVICE
- * Simulates authentication API calls with realistic delays.
+ * Simulates phone-based OTP authentication with realistic delays.
  * Replace with real API calls by setting USE_MOCK = false in src/config/env.js
  */
 import { MOCK_DELAY_MIN, MOCK_DELAY_MAX } from '../../config/env';
 import { MOCK_USERS } from './mockData';
 
-/** Simulates network delay */
 const delay = () =>
   new Promise((resolve) =>
     setTimeout(
@@ -15,38 +14,34 @@ const delay = () =>
     )
   );
 
-/**
- * MOCK CREDENTIALS (for reference / testing):
- *   Employee: role = 'employee' (any input accepted)
- *   Driver:   role = 'driver'   (any input accepted)
- *
- * When backend is ready, remove this file and set USE_MOCK = false.
- */
 export const mockAuthService = {
-  /** Accepts any credentials. Role is determined by credentials.role field. */
+  /**
+   * Step 1: Request OTP — just confirms the phone number was received.
+   * Does NOT return a token. Authentication happens after OTP verification.
+   */
   login: async (credentials) => {
     await delay();
-    const role = credentials?.role || 'employee';
-    const user = MOCK_USERS[role];
-    if (!user) throw new Error('Invalid role');
+    return {
+      data: {
+        success: true,
+        message: 'OTP sent successfully',
+        phone: credentials?.phone,
+      },
+    };
+  },
+
+  /**
+   * Step 2: Verify OTP — authenticates the user.
+   * Accepts any OTP in mock mode. Role determines which user profile is returned.
+   */
+  verifyOTP: async (phone, otp, role = 'employee') => {
+    await delay();
+    const user = MOCK_USERS[role] ?? MOCK_USERS.employee;
     return {
       data: {
         user,
         token: `mock-jwt-${role}-${Date.now()}`,
         refreshToken: `mock-refresh-${role}-${Date.now()}`,
-        expiresIn: 3600,
-      },
-    };
-  },
-
-  verifyOTP: async (phone, otp) => {
-    await delay();
-    // Accept any OTP in mock mode
-    return {
-      data: {
-        user: MOCK_USERS.employee,
-        token: `mock-jwt-employee-${Date.now()}`,
-        refreshToken: `mock-refresh-employee-${Date.now()}`,
         expiresIn: 3600,
       },
     };
