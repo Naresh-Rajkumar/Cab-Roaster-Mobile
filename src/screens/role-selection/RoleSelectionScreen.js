@@ -93,7 +93,13 @@ const RoleSelectionScreen = ({ navigation }) => {
       return;
     }
     dispatch(setPendingRole(selectedRole));
-    navigation.navigate(SCREENS.ONBOARDING);
+    // Driver gets its own rich onboarding (1/17 → 2/17 → 3/17)
+    // Employee continues with the standard onboarding flow
+    if (selectedRole === USER_ROLES.DRIVER) {
+      navigation.navigate(SCREENS.DRIVER_ONBOARDING);
+    } else {
+      navigation.navigate(SCREENS.ONBOARDING);
+    }
   };
 
   return (

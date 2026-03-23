@@ -11,7 +11,9 @@ import { createStackNavigator } from '@react-navigation/stack';
 import SplashScreen from '../screens/splash/SplashScreen';
 import RoleSelectionScreen from '../screens/role-selection/RoleSelectionScreen';
 import OnboardingScreen from '../screens/Onboarding/OnboardingScreen';
+import DriverOnboardingScreen from '../screens/Onboarding/DriverOnboardingScreen';
 import LoginScreen from '../screens/Auth/LoginScreen';
+import DriverLoginScreen from '../screens/Auth/DriverLoginScreen';
 import OTPVerificationScreen from '../screens/Auth/OTPVerificationScreen';
 import RequestCabStep1Screen from '../screens/Requests/RequestCabStep1Screen';
 import RequestCabStep2Screen from '../screens/Requests/RequestCabStep2Screen';
@@ -46,8 +48,18 @@ const AuthNavigator = () => {
         options={{ gestureEnabled: true }}
       />
       <Stack.Screen
+        name={SCREENS.DRIVER_ONBOARDING}
+        component={DriverOnboardingScreen}
+        options={{ gestureEnabled: true }}
+      />
+      <Stack.Screen
         name={SCREENS.LOGIN}
         component={LoginScreen}
+        options={{ gestureEnabled: true }}
+      />
+      <Stack.Screen
+        name={SCREENS.DRIVER_LOGIN}
+        component={DriverLoginScreen}
         options={{ gestureEnabled: true }}
       />
       <Stack.Screen

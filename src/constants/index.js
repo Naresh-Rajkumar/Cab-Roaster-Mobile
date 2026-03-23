@@ -51,10 +51,12 @@ export const SCREENS = {
 
   // Onboarding
   ONBOARDING: 'Onboarding',
+  DRIVER_ONBOARDING: 'DriverOnboarding',
   WELCOME: 'Welcome',
 
   // Auth
   LOGIN: 'Login',
+  DRIVER_LOGIN: 'DriverLogin',
   OTP_VERIFICATION: 'OTPVerification',
 
   // Tabs (shared)
