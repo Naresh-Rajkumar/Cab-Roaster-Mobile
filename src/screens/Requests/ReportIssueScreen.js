@@ -160,7 +160,7 @@ const ReportIssueScreen = ({ navigation, route }) => {
           ]}
           onPress={() => {
             dispatch(submitRequest({
-              requestType: 'Issue',
+              requestType: 'schedule_change',
               category: selectedCategory,
               reason: description.trim(),
               tripId: trip?.id,

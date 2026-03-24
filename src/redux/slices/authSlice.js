@@ -119,10 +119,10 @@ const authSlice = createSlice({
         state.token = data?.accessToken || null;
         state.role = data?.user?.role || state.pendingRole || 'employee';
         state.isAuthenticated = !!(data?.accessToken);
-        // Employee with no home_address needs onboarding (cab setup)
+        // Employee without empCode/employeeId needs onboarding (no employee record yet)
         const role = state.role;
         const user = data?.user;
-        if (role !== 'driver' && user && !user.homeAddress && !user.home_address) {
+        if (role !== 'driver' && user && !user.empCode && !user.employeeId && !user.empId) {
           state.needsOnboarding = true;
         }
       })
@@ -144,7 +144,7 @@ const authSlice = createSlice({
         state.isAuthenticated = !!(data?.accessToken);
         const role = state.role;
         const user = data?.user;
-        if (role !== 'driver' && user && !user.homeAddress && !user.home_address) {
+        if (role !== 'driver' && user && !user.empCode && !user.employeeId && !user.empId) {
           state.needsOnboarding = true;
         }
       })

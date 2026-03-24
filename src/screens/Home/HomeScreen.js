@@ -62,84 +62,110 @@ const MapPlaceholder = ({ colors }) => (
 );
 
 // ─── Today's Ride Card ────────────────────────────────────────────────────────
-const TodayRideCard = ({ currentRide, colors, onTrack }) => (
-  <View style={[styles.rideCard, { backgroundColor: colors.surface }]}>
-    {/* Map thumbnail */}
-    <MapPlaceholder colors={colors} />
-
-    {/* Route */}
-    <View style={styles.routeBlock}>
-      <View style={styles.routeStop}>
-        <View style={[styles.checkBox, { backgroundColor: '#e8f6ed' }]}>
-          <Ionicons name="checkmark" size={13} color="#16a34a" />
-        </View>
-        <Text style={[styles.stopName, { color: colors.text }]}>
-          {currentRide?.pickup ?? 'Karapakkam'}
+const TodayRideCard = ({ currentRide, colors, onTrack }) => {
+  if (!currentRide || (!currentRide.pickup && !currentRide.route && !currentRide.driverName)) {
+    return (
+      <View style={[styles.rideCard, { backgroundColor: colors.surface, alignItems: 'center', paddingVertical: 32 }]}>
+        <Ionicons name="car-outline" size={48} color={colors.textTertiary ?? '#9CA3AF'} />
+        <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 12, fontWeight: '500' }}>
+          No ride scheduled for today
+        </Text>
+        <Text style={{ color: colors.textTertiary ?? '#9CA3AF', fontSize: 12, marginTop: 4 }}>
+          Your next ride will appear here
         </Text>
       </View>
+    );
+  }
 
-      <View style={styles.routeConnectorRow}>
-        <View style={[styles.vertDash, { borderColor: colors.border }]} />
-        <Text style={[styles.distanceLabel, { color: colors.textSecondary }]}>
-          {currentRide?.distance ?? '8km away'}
-        </Text>
-      </View>
+  return (
+    <View style={[styles.rideCard, { backgroundColor: colors.surface }]}>
+      {/* Map thumbnail */}
+      <MapPlaceholder colors={colors} />
 
-      <View style={styles.routeStop}>
-        <View style={[styles.destDot, { borderColor: colors.primary, backgroundColor: colors.primaryContainer }]}>
-          <Ionicons name="person" size={11} color={colors.primary} />
-        </View>
-        <Text style={[styles.stopName, { color: colors.text }]}>
-          {currentRide?.dropoff ?? 'Sholinganallur'}
-        </Text>
-        <View style={[styles.etaBadge, { backgroundColor: colors.primaryContainer }]}>
-          <View style={[styles.etaDot, { backgroundColor: colors.primary }]} />
-          <Text style={[styles.etaText, { color: colors.primary }]}>
-            {currentRide?.eta ?? '15 mins'}
+      {/* Route */}
+      <View style={styles.routeBlock}>
+        <View style={styles.routeStop}>
+          <View style={[styles.checkBox, { backgroundColor: '#e8f6ed' }]}>
+            <Ionicons name="checkmark" size={13} color="#16a34a" />
+          </View>
+          <Text style={[styles.stopName, { color: colors.text }]}>
+            {currentRide.pickup || currentRide.nextStop || 'Pickup'}
           </Text>
         </View>
-      </View>
-    </View>
 
-    <View style={[styles.divider, { backgroundColor: colors.borderLight }]} />
+        <View style={styles.routeConnectorRow}>
+          <View style={[styles.vertDash, { borderColor: colors.border }]} />
+          <Text style={[styles.distanceLabel, { color: colors.textSecondary }]}>
+            {currentRide.distance || ''}
+          </Text>
+        </View>
 
-    {/* Driver */}
-    <View style={styles.driverRow}>
-      <Avatar name={currentRide?.driverName ?? 'Marvin McKinney'} size={42} />
-      <View style={styles.driverMeta}>
-        <Text style={[styles.driverName, { color: colors.text }]}>
-          {currentRide?.driverName ?? 'Marvin McKinney'}
-        </Text>
-        <Text style={[styles.vehicleInfo, { color: colors.textSecondary }]}>
-          {currentRide?.vehicleNo ?? 'TN 14 CV 3755'}{' '}
-          <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
-          {currentRide?.vehicleType ?? 'Ertiga'}
-        </Text>
+        <View style={styles.routeStop}>
+          <View style={[styles.destDot, { borderColor: colors.primary, backgroundColor: colors.primaryContainer }]}>
+            <Ionicons name="person" size={11} color={colors.primary} />
+          </View>
+          <Text style={[styles.stopName, { color: colors.text }]}>
+            {currentRide.dropoff || currentRide.route || 'Drop'}
+          </Text>
+          {currentRide.eta ? (
+            <View style={[styles.etaBadge, { backgroundColor: colors.primaryContainer }]}>
+              <View style={[styles.etaDot, { backgroundColor: colors.primary }]} />
+              <Text style={[styles.etaText, { color: colors.primary }]}>{currentRide.eta}</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
-      <TouchableOpacity style={[styles.callBtn, { borderColor: colors.borderLight }]}>
-        <Ionicons name="call-outline" size={18} color={colors.text} />
+
+      <View style={[styles.divider, { backgroundColor: colors.borderLight }]} />
+
+      {/* Driver */}
+      <View style={styles.driverRow}>
+        <Avatar name={currentRide.driverName || '?'} size={42} />
+        <View style={styles.driverMeta}>
+          <Text style={[styles.driverName, { color: colors.text }]}>
+            {currentRide.driverName || 'Driver not assigned'}
+          </Text>
+          <Text style={[styles.vehicleInfo, { color: colors.textSecondary }]}>
+            {currentRide.vehicleNo || currentRide.vehicle || ''}{' '}
+            {currentRide.vehicleType ? (
+              <>
+                <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
+                {currentRide.vehicleType}
+              </>
+            ) : null}
+          </Text>
+        </View>
+        <TouchableOpacity style={[styles.callBtn, { borderColor: colors.borderLight }]}>
+          <Ionicons name="call-outline" size={18} color={colors.text} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Track Ride */}
+      <TouchableOpacity
+        style={[styles.trackBtn, { backgroundColor: colors.primary }]}
+        onPress={onTrack}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="navigate-outline" size={18} color="#fff" />
+        <Text style={styles.trackBtnText}>Track Ride</Text>
       </TouchableOpacity>
     </View>
-
-    {/* Track Ride */}
-    <TouchableOpacity
-      style={[styles.trackBtn, { backgroundColor: colors.primary }]}
-      onPress={onTrack}
-      activeOpacity={0.85}
-    >
-      <Ionicons name="navigate-outline" size={18} color="#fff" />
-      <Text style={styles.trackBtnText}>Track Ride</Text>
-    </TouchableOpacity>
-  </View>
-);
+  );
+};
 
 // ─── Schedule Card ────────────────────────────────────────────────────────────
 const ScheduleCard = ({ schedule, colors }) => (
   <View style={[styles.scheduleCard, { backgroundColor: colors.surface }]}>
+    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 12 }}>
+      Upcoming Rides
+    </Text>
     {schedule.length === 0 ? (
-      <Text style={[styles.scheduleLabel, { color: colors.textSecondary, textAlign: 'center' }]}>
-        No rides scheduled today
-      </Text>
+      <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+        <Ionicons name="calendar-outline" size={32} color={colors.textTertiary ?? '#9CA3AF'} />
+        <Text style={[styles.scheduleLabel, { color: colors.textSecondary, textAlign: 'center', marginTop: 8 }]}>
+          No upcoming rides scheduled
+        </Text>
+      </View>
     ) : (
       schedule.map((item, idx) => (
         <View key={item.id}>
@@ -209,7 +235,7 @@ const HomeScreen = ({ navigation }) => {
   const historyTrips = useSelector((state) => state.trip.historyTrips);
   const [refreshing, setRefreshing] = useState(false);
 
-  const firstName = user?.name?.split(' ')[0] ?? 'Raghavi';
+  const firstName = user?.firstName ?? user?.displayName?.split(' ')[0] ?? user?.name?.split(' ')[0] ?? 'Guest';
 
   useEffect(() => {
     dispatch(fetchCurrentRide());

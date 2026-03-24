@@ -45,7 +45,7 @@ const CancelRequestScreen = ({ navigation, route }) => {
   const handleSubmit = () => {
     const reason = selectedReason === 'other' ? otherReason.trim() : selectedReason;
     dispatch(submitRequest({
-      requestType: 'Cancellation',
+      requestType: 'cancellation',
       tripId: trip?.id,
       reason,
     })).unwrap().then(() => {

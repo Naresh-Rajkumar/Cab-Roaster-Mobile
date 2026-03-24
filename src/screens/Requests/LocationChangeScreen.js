@@ -49,7 +49,7 @@ const LocationChangeScreen = ({ navigation, route }) => {
   const handleSendRequest = () => {
     const reason = selectedReason === 'Other' ? otherReason.trim() : selectedReason;
     dispatch(submitRequest({
-      requestType: 'LocationChange',
+      requestType: 'location_change',
       tripId: trip?.id,
       reason,
       newLocation: newLocation?.name ?? newLocation?.address,

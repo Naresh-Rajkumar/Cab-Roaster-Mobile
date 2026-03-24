@@ -15,6 +15,28 @@ export const fetchNotifications = createAsyncThunk(
     try {
       const res = await requestsService.getNotifications(params);
       const raw = unwrap(res);
+      // Backend returns { sections: [{ section, items }], unreadCount }
+      // Flatten sections into a flat notification list for the mobile UI
+      if (raw && raw.sections) {
+        const items = [];
+        for (const section of raw.sections) {
+          const category = (section.section || '').toLowerCase();
+          for (const item of (section.items || [])) {
+            items.push({
+              id: String(item.id),
+              title: item.text || item.title || '',
+              body: item.subtitle || item.body || '',
+              time: item.time || '',
+              unread: item.unread ?? true,
+              iconName: item.icon === 'cab_request' ? 'car-outline' : 'notifications-outline',
+              iconBg: item.alert ? '#FEE2E2' : '#EDE9FE',
+              iconColor: item.alert ? '#DC2626' : '#7C3AED',
+              category: category === 'today' ? 'today' : 'yesterday',
+            });
+          }
+        }
+        return items;
+      }
       return Array.isArray(raw) ? raw : [];
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch notifications');
@@ -66,7 +88,7 @@ const appSlice = createSlice({
       state.unreadCount += 1;
     },
     markNotificationsRead: (state) => {
-      state.notifications = state.notifications.map((n) => ({ ...n, read: true }));
+      state.notifications = state.notifications.map((n) => ({ ...n, unread: false }));
       state.unreadCount = 0;
     },
     setNetworkStatus: (state, action) => {
@@ -80,7 +102,7 @@ const appSlice = createSlice({
     builder
       .addCase(fetchNotifications.fulfilled, (state, action) => {
         state.notifications = action.payload;
-        state.unreadCount = action.payload.filter((n) => !n.read).length;
+        state.unreadCount = action.payload.filter((n) => n.unread).length;
       })
       .addCase(submitRequest.pending, (state) => {
         state.isSubmitting = true;
