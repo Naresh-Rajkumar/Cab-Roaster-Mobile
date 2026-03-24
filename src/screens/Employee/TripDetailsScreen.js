@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,9 +6,11 @@ import {
   ScrollView,
   TouchableOpacity,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import {
   Header,
@@ -21,102 +23,60 @@ import StopItem from '../../components/items/StopItem/StopItem';
 import EmployeeListItem from '../../components/items/EmployeeListItem/EmployeeListItem';
 import spacing from '../../theme/spacing.json';
 import typography from '../../theme/typography.json';
-import { SCREENS, HANDOFF_STATUS } from '../../constants';
-
-const MOCK_STOPS = [
-  {
-    id: '1',
-    name: 'Marathahalli Bridge',
-    address: 'Outer Ring Road, Marathahalli, Bengaluru 560037',
-    time: '08:30 AM',
-    employeeCount: 1,
-    distance: '2.3 km',
-    isCompleted: true,
-    isCurrent: false,
-  },
-  {
-    id: '2',
-    name: 'Kundalahalli Gate',
-    address: 'Kundalahalli Main Rd, Brookefield, Bengaluru 560037',
-    time: '08:40 AM',
-    employeeCount: 1,
-    distance: '1.5 km',
-    isCompleted: false,
-    isCurrent: true,
-  },
-  {
-    id: '3',
-    name: 'ITPL Main Road',
-    address: 'ITPL Main Road, Whitefield, Bengaluru 560066',
-    time: '08:50 AM',
-    employeeCount: 1,
-    distance: '3.1 km',
-    isCompleted: false,
-    isCurrent: false,
-  },
-  {
-    id: '4',
-    name: 'Hoodi Junction',
-    address: 'Hoodi Village, Whitefield, Bengaluru 560048',
-    time: '09:00 AM',
-    employeeCount: 1,
-    distance: '1.8 km',
-    isCompleted: false,
-    isCurrent: false,
-  },
-];
-
-const MOCK_TRIP_EMPLOYEES = [
-  {
-    id: '1',
-    name: 'Priya Sharma',
-    employeeId: 'EMP-2045',
-    pickupPoint: 'Marathahalli Bridge',
-    scheduledTime: '08:30 AM',
-    handoffStatus: HANDOFF_STATUS.PICKED_UP,
-  },
-  {
-    id: '2',
-    name: 'Amit Patel',
-    employeeId: 'EMP-2078',
-    pickupPoint: 'Kundalahalli Gate',
-    scheduledTime: '08:40 AM',
-    handoffStatus: HANDOFF_STATUS.PENDING,
-  },
-  {
-    id: '3',
-    name: 'Sneha Reddy',
-    employeeId: 'EMP-3012',
-    pickupPoint: 'ITPL Main Road',
-    scheduledTime: '08:50 AM',
-    handoffStatus: HANDOFF_STATUS.PENDING,
-  },
-  {
-    id: '4',
-    name: 'Vikram Singh',
-    employeeId: 'EMP-3089',
-    pickupPoint: 'Hoodi Junction',
-    scheduledTime: '09:00 AM',
-    handoffStatus: HANDOFF_STATUS.NO_SHOW,
-  },
-];
+import { SCREENS } from '../../constants';
+import { fetchTripDetails, fetchTripStops } from '../../redux/slices/tripSlice';
 
 const TripDetailsScreen = ({ navigation, route }) => {
-  const { trip } = route.params || {};
+  const { trip: routeTrip } = route.params || {};
+  const tripId = routeTrip?.id;
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
 
-  const driverInfo = {
-    name: trip?.driverName || 'Rajesh Kumar',
-    phone: '+91 98765 00001',
-    vehicleNo: trip?.vehicleNo || 'KA-01-AB-1234',
-    vehicleType: 'Toyota Innova',
-    rating: 4.8,
+  const selectedTrip = useSelector((state) => state.trip.selectedTrip);
+  const tripStops = useSelector((state) => state.trip.tripStops);
+  const driverInfo = useSelector((state) => state.trip.driverInfo);
+  const isLoading = useSelector((state) => state.trip.isLoading);
+
+  useEffect(() => {
+    if (tripId) {
+      dispatch(fetchTripDetails(tripId));
+      dispatch(fetchTripStops(tripId));
+    }
+  }, [tripId, dispatch]);
+
+  const trip = selectedTrip ?? routeTrip;
+
+  // Flatten employees from all stops for the employees list
+  const tripEmployees = tripStops.flatMap((stop) =>
+    (stop.employees ?? []).map((emp) => ({
+      ...emp,
+      pickupPoint: stop.name,
+      scheduledTime: stop.time,
+      handoffStatus: emp.status,
+    }))
+  );
+
+  const driver = driverInfo ?? {
+    name: trip?.driverName ?? '',
+    phone: trip?.driverPhone ?? '',
+    vehicleNo: trip?.vehicleNo ?? '',
+    vehicleType: trip?.vehicleType ?? '',
+    rating: null,
   };
 
   const handleCallDriver = () => {
-    Linking.openURL(`tel:${driverInfo.phone}`);
+    if (driver.phone) Linking.openURL(`tel:${driver.phone}`);
   };
+
+  if (isLoading && !selectedTrip) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['bottom']}>
+        <Header title="Trip Details" showBack onBackPress={() => navigation.goBack()} />
+        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 60 }} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView
@@ -124,8 +84,8 @@ const TripDetailsScreen = ({ navigation, route }) => {
       edges={['bottom']}
     >
       <Header
-        title={`Trip #${trip?.id || 'TR-1042'}`}
-        subtitle={trip?.scheduledTime || '08:30 AM'}
+        title={trip?.tripNumber ?? `Trip #${tripId ?? ''}`}
+        subtitle={trip?.scheduledTime ?? ''}
         showBack
         onBackPress={() => navigation.goBack()}
         rightIcon={
@@ -187,7 +147,7 @@ const TripDetailsScreen = ({ navigation, route }) => {
                   ]}
                   numberOfLines={1}
                 >
-                  {trip?.pickupLocation || 'Tech Park, Whitefield'}
+                  {trip?.pickup ?? ''}
                 </Text>
               </View>
             </View>
@@ -223,7 +183,7 @@ const TripDetailsScreen = ({ navigation, route }) => {
                   ]}
                   numberOfLines={1}
                 >
-                  {trip?.dropLocation || 'Manyata Tech Park'}
+                  {trip?.dropoff ?? ''}
                 </Text>
               </View>
             </View>
@@ -248,7 +208,7 @@ const TripDetailsScreen = ({ navigation, route }) => {
                   },
                 ]}
               >
-                {trip?.employeeCount || 4}
+                {tripEmployees.length || trip?.employeeCount || 0}
               </Text>
               <Text
                 style={[
@@ -280,7 +240,7 @@ const TripDetailsScreen = ({ navigation, route }) => {
                   },
                 ]}
               >
-                {trip?.stops || 4}
+                {tripStops.length || trip?.stops || 0}
               </Text>
               <Text
                 style={[
@@ -334,7 +294,7 @@ const TripDetailsScreen = ({ navigation, route }) => {
           elevated
           style={styles.driverCard}
           onPress={() =>
-            navigation.navigate(SCREENS.DRIVER_INFO, { driver: driverInfo })
+            navigation.navigate(SCREENS.DRIVER_INFO, { driver })
           }
         >
           <View style={styles.sectionHeader}>
@@ -356,7 +316,7 @@ const TripDetailsScreen = ({ navigation, route }) => {
             />
           </View>
           <View style={styles.driverRow}>
-            <Avatar name={driverInfo.name} size={48} />
+            <Avatar name={driver.name} size={48} />
             <View style={styles.driverDetails}>
               <Text
                 style={[
@@ -367,7 +327,7 @@ const TripDetailsScreen = ({ navigation, route }) => {
                   },
                 ]}
               >
-                {driverInfo.name}
+                {driver.name}
               </Text>
               <View style={styles.vehicleRow}>
                 <Ionicons
@@ -384,23 +344,25 @@ const TripDetailsScreen = ({ navigation, route }) => {
                     },
                   ]}
                 >
-                  {driverInfo.vehicleType} | {driverInfo.vehicleNo}
+                  {driver.vehicleType} | {driver.vehicleNo}
                 </Text>
               </View>
-              <View style={styles.ratingRow}>
-                <Ionicons name="star" size={14} color={colors.warning} />
-                <Text
-                  style={[
-                    styles.ratingText,
-                    {
-                      color: colors.textSecondary,
-                      fontFamily: typography.fontFamily.medium,
-                    },
-                  ]}
-                >
-                  {driverInfo.rating}
-                </Text>
-              </View>
+              {driver.rating != null && (
+                <View style={styles.ratingRow}>
+                  <Ionicons name="star" size={14} color={colors.warning} />
+                  <Text
+                    style={[
+                      styles.ratingText,
+                      {
+                        color: colors.textSecondary,
+                        fontFamily: typography.fontFamily.medium,
+                      },
+                    ]}
+                  >
+                    {driver.rating}
+                  </Text>
+                </View>
+              )}
             </View>
             <TouchableOpacity
               onPress={handleCallDriver}
@@ -437,15 +399,15 @@ const TripDetailsScreen = ({ navigation, route }) => {
                 },
               ]}
             >
-              1/{MOCK_STOPS.length} completed
+              {tripStops.filter((s) => s.status === 'completed').length}/{tripStops.length} completed
             </Text>
           </View>
-          {MOCK_STOPS.map((stop, index) => (
+          {tripStops.map((stop, index) => (
             <StopItem
               key={stop.id}
               stop={stop}
               index={index}
-              isLast={index === MOCK_STOPS.length - 1}
+              isLast={index === tripStops.length - 1}
             />
           ))}
         </Card>
@@ -465,7 +427,7 @@ const TripDetailsScreen = ({ navigation, route }) => {
               Employees
             </Text>
           </View>
-          {MOCK_TRIP_EMPLOYEES.map((employee) => (
+          {tripEmployees.map((employee) => (
             <EmployeeListItem
               key={employee.id}
               employee={employee}

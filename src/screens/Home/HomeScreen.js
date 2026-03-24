@@ -11,15 +11,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
-import { fetchCurrentRide } from '../../redux/slices/tripSlice';
+import { fetchCurrentRide, fetchTrips } from '../../redux/slices/tripSlice';
 import { Avatar, StatusBadge } from '../../components';
 import { SCREENS } from '../../constants';
 import { getGreeting } from '../../utils';
-
-const SCHEDULE = [
-  { id: 's1', label: 'Ride to Office', time: '9:30 AM', status: 'completed' },
-  { id: 's2', label: 'Ride to Home', time: '7:30 PM', status: 'scheduled' },
-];
 
 const QUICK_ACTIONS = [
   {
@@ -42,26 +37,6 @@ const QUICK_ACTIONS = [
   },
 ];
 
-const RECENT_ACTIVITY = [
-  {
-    id: 'a1',
-    icon: 'time-outline',
-    iconBg: '#FEF3C7',
-    iconColor: '#F59E0B',
-    title: 'Location Change Request',
-    subtitle: 'Level 1 Request Approved',
-    status: 'pending',
-  },
-  {
-    id: 'a2',
-    icon: 'checkmark-circle',
-    iconBg: '#DCFCE7',
-    iconColor: '#22C55E',
-    title: 'Ride to Office',
-    subtitle: '9:30 PM',
-    status: 'completed',
-  },
-];
 
 // ─── Map Placeholder ──────────────────────────────────────────────────────────
 const MapPlaceholder = ({ colors }) => (
@@ -159,25 +134,31 @@ const TodayRideCard = ({ currentRide, colors, onTrack }) => (
 );
 
 // ─── Schedule Card ────────────────────────────────────────────────────────────
-const ScheduleCard = ({ colors }) => (
+const ScheduleCard = ({ schedule, colors }) => (
   <View style={[styles.scheduleCard, { backgroundColor: colors.surface }]}>
-    {SCHEDULE.map((item, idx) => (
-      <View key={item.id}>
-        <View style={styles.scheduleRow}>
-          <Ionicons
-            name={item.status === 'completed' ? 'checkmark-circle' : 'time-outline'}
-            size={20}
-            color={item.status === 'completed' ? '#16a34a' : colors.textSecondary}
-          />
-          <Text style={[styles.scheduleLabel, { color: colors.text }]}>{item.label}</Text>
-          <Text style={[styles.scheduleTime, { color: colors.textSecondary }]}>{item.time}</Text>
-          <StatusBadge status={item.status} />
+    {schedule.length === 0 ? (
+      <Text style={[styles.scheduleLabel, { color: colors.textSecondary, textAlign: 'center' }]}>
+        No rides scheduled today
+      </Text>
+    ) : (
+      schedule.map((item, idx) => (
+        <View key={item.id}>
+          <View style={styles.scheduleRow}>
+            <Ionicons
+              name={item.status === 'completed' ? 'checkmark-circle' : 'time-outline'}
+              size={20}
+              color={item.status === 'completed' ? '#16a34a' : colors.textSecondary}
+            />
+            <Text style={[styles.scheduleLabel, { color: colors.text }]}>{item.title ?? item.label}</Text>
+            <Text style={[styles.scheduleTime, { color: colors.textSecondary }]}>{item.date ?? item.time}</Text>
+            <StatusBadge status={item.status} />
+          </View>
+          {idx < schedule.length - 1 && (
+            <View style={[styles.scheduleDash, { borderLeftColor: colors.border }]} />
+          )}
         </View>
-        {idx < SCHEDULE.length - 1 && (
-          <View style={[styles.scheduleDash, { borderLeftColor: colors.border }]} />
-        )}
-      </View>
-    ))}
+      ))
+    )}
   </View>
 );
 
@@ -224,18 +205,40 @@ const HomeScreen = ({ navigation }) => {
   const dispatch = useDispatch();
   const user = useSelector((state) => state.auth.user);
   const currentRide = useSelector((state) => state.trip.currentRide);
+  const upcomingTrips = useSelector((state) => state.trip.upcomingTrips);
+  const historyTrips = useSelector((state) => state.trip.historyTrips);
   const [refreshing, setRefreshing] = useState(false);
 
   const firstName = user?.name?.split(' ')[0] ?? 'Raghavi';
 
   useEffect(() => {
     dispatch(fetchCurrentRide());
+    dispatch(fetchTrips({ type: 'upcoming', status: 'Upcoming' }));
+    dispatch(fetchTrips({ type: 'history', status: 'Completed' }));
   }, [dispatch]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    dispatch(fetchCurrentRide()).finally(() => setRefreshing(false));
+    Promise.all([
+      dispatch(fetchCurrentRide()),
+      dispatch(fetchTrips({ type: 'upcoming', status: 'Upcoming' })),
+      dispatch(fetchTrips({ type: 'history', status: 'Completed' })),
+    ]).finally(() => setRefreshing(false));
   }, [dispatch]);
+
+  // Build schedule from upcoming trips (today's rides)
+  const schedule = upcomingTrips.slice(0, 3);
+
+  // Recent activity from the last few completed trips
+  const recentActivity = historyTrips.slice(0, 3).map((trip) => ({
+    id: trip.id,
+    icon: 'checkmark-circle',
+    iconBg: '#DCFCE7',
+    iconColor: '#22C55E',
+    title: trip.title ?? trip.tripNumber ?? 'Completed Ride',
+    subtitle: trip.date ?? '',
+    status: trip.status,
+  }));
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -276,7 +279,7 @@ const HomeScreen = ({ navigation }) => {
 
         {/* Today's Schedule (inside a card) */}
         <View style={styles.section}>
-          <ScheduleCard colors={colors} />
+          <ScheduleCard schedule={schedule} colors={colors} />
         </View>
 
         {/* Quick Actions */}
@@ -289,12 +292,14 @@ const HomeScreen = ({ navigation }) => {
         </View>
 
         {/* Recent Activity */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Activity</Text>
-          {RECENT_ACTIVITY.map((item) => (
-            <ActivityItem key={item.id} item={item} colors={colors} />
-          ))}
-        </View>
+        {recentActivity.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Activity</Text>
+            {recentActivity.map((item) => (
+              <ActivityItem key={item.id} item={item} colors={colors} />
+            ))}
+          </View>
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>

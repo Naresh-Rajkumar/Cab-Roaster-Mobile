@@ -12,10 +12,13 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
+import { submitRequest } from '../../redux/slices/appSlice';
 
 const CHANGE_REASONS = [
   'Moved to new area',
@@ -28,6 +31,8 @@ const CHANGE_REASONS = [
 const LocationChangeScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
+  const isSubmitting = useSelector((state) => state.app.isSubmitting);
 
   const trip = route?.params?.trip;
   const newLocation = route?.params?.newLocation;
@@ -37,11 +42,23 @@ const LocationChangeScreen = ({ navigation, route }) => {
   const [otherReason, setOtherReason] = useState('');
 
   const canSubmit =
-    selectedReason && (selectedReason !== 'Other' || otherReason.trim().length > 0);
+    !isSubmitting &&
+    selectedReason &&
+    (selectedReason !== 'Other' || otherReason.trim().length > 0);
 
   const handleSendRequest = () => {
-    // Navigate to My Trips dashboard (pop all the way back)
-    navigation.popToTop();
+    const reason = selectedReason === 'Other' ? otherReason.trim() : selectedReason;
+    dispatch(submitRequest({
+      requestType: 'LocationChange',
+      tripId: trip?.id,
+      reason,
+      newLocation: newLocation?.name ?? newLocation?.address,
+      currentLocation: currentPickup,
+    })).unwrap().then(() => {
+      navigation.popToTop();
+    }).catch((err) => {
+      Alert.alert('Error', err || 'Failed to submit request');
+    });
   };
 
   return (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,27 +6,93 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
+import { configService } from '../../services/api/configService';
 import { SCREENS } from '../../constants';
 import spacing from '../../theme/spacing.json';
 import typography from '../../theme/typography.json';
 
+const unwrap = (res) => {
+  const body = res?.data;
+  if (body?.data) return body.data;
+  if (Array.isArray(body)) return body;
+  return body ?? [];
+};
+
 const RequestCabStep1Screen = ({ navigation }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const user = useSelector((state) => state.auth.user);
 
-  const [workLocation, setWorkLocation] = useState('Chennai');
+  // API data
+  const [workLocations, setWorkLocations] = useState([]);
+  const [stops, setStops] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Form state
+  const [workLocation, setWorkLocation] = useState('');
   const [cabPreference, setCabPreference] = useState('both');
-  const [homeLocation, setHomeLocation] = useState('Chromepet');
+  const [homeLocation, setHomeLocation] = useState('');
   const [differentDrop, setDifferentDrop] = useState(false);
-  const [pickupPoint, setPickupPoint] = useState('Medavakkam - Suggested');
+  const [pickupPoint, setPickupPoint] = useState('');
+  const [dropPoint, setDropPoint] = useState('');
+  const [showPickupDropdown, setShowPickupDropdown] = useState(false);
+  const [showDropDropdown, setShowDropDropdown] = useState(false);
+
+  // Greeting
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+  const userName = user?.name?.split(' ')[0] || user?.firstName || 'User';
+  const initials = (user?.name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [locRes, stopsRes] = await Promise.all([
+          configService.getWorkLocations(),
+          configService.getStops(),
+        ]);
+        const locs = unwrap(locRes);
+        const stps = unwrap(stopsRes);
+        setWorkLocations(Array.isArray(locs) ? locs : []);
+        setStops(Array.isArray(stps) ? stps : []);
+        // Default to first work location
+        if (Array.isArray(locs) && locs.length > 0) {
+          setWorkLocation(locs[0].name || locs[0].id);
+        }
+      } catch (err) {
+        console.warn('Failed to load config data:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const handleContinue = () => {
-    navigation.navigate(SCREENS.REQUEST_CAB_STEP2);
+    navigation.navigate(SCREENS.REQUEST_CAB_STEP2, {
+      workLocation,
+      cabPreference,
+      homeLocation,
+      pickupStop: pickupPoint,
+      dropStop: differentDrop ? dropPoint : pickupPoint,
+    });
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView
@@ -37,15 +103,15 @@ const RequestCabStep1Screen = ({ navigation }) => {
       <View style={[styles.header, { backgroundColor: colors.background }]}>
         <View style={styles.avatarWrapper}>
           <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-            <Text style={styles.avatarText}>R</Text>
+            <Text style={styles.avatarText}>{initials}</Text>
           </View>
         </View>
         <View style={styles.headerTextWrapper}>
-          <Text style={[styles.greetingText, { color: colors.textSecondary, fontFamily: typography.fontFamily.regular }]}>
-            Good Morning,
+          <Text style={[styles.greetingText, { color: colors.textSecondary }]}>
+            {greeting},
           </Text>
-          <Text style={[styles.greetingName, { color: colors.text, fontFamily: typography.fontFamily.bold }]}>
-            Ragha!
+          <Text style={[styles.greetingName, { color: colors.text }]}>
+            {userName}!
           </Text>
         </View>
       </View>
@@ -57,10 +123,10 @@ const RequestCabStep1Screen = ({ navigation }) => {
       >
         {/* Title Row */}
         <View style={styles.titleRow}>
-          <Text style={[styles.screenTitle, { color: colors.text, fontFamily: typography.fontFamily.bold }]}>
+          <Text style={[styles.screenTitle, { color: colors.text }]}>
             Ride Scheduling Setup
           </Text>
-          <Text style={[styles.stepIndicator, { color: colors.textSecondary, fontFamily: typography.fontFamily.medium }]}>
+          <Text style={[styles.stepIndicator, { color: colors.textSecondary }]}>
             1 of 2
           </Text>
         </View>
@@ -72,62 +138,41 @@ const RequestCabStep1Screen = ({ navigation }) => {
 
         {/* Work Location */}
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
+          <Text style={[styles.sectionLabel, { color: colors.text }]}>
             Work Location <Text style={{ color: colors.primary }}>*</Text>
           </Text>
-          <View style={[styles.segmentedControl, { borderColor: colors.primary }]}>
-            <TouchableOpacity
-              style={[
-                styles.segmentTab,
-                styles.segmentTabLeft,
-                workLocation === 'Chennai'
-                  ? { backgroundColor: colors.primary }
-                  : { backgroundColor: 'transparent' },
-              ]}
-              onPress={() => setWorkLocation('Chennai')}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.segmentTabText,
-                  {
-                    color: workLocation === 'Chennai' ? '#FFFFFF' : colors.primary,
-                    fontFamily: typography.fontFamily.medium,
-                  },
-                ]}
-              >
-                Chennai
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.segmentTab,
-                styles.segmentTabRight,
-                workLocation === 'Coimbatore'
-                  ? { backgroundColor: colors.primary }
-                  : { backgroundColor: 'transparent' },
-              ]}
-              onPress={() => setWorkLocation('Coimbatore')}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.segmentTabText,
-                  {
-                    color: workLocation === 'Coimbatore' ? '#FFFFFF' : colors.primary,
-                    fontFamily: typography.fontFamily.medium,
-                  },
-                ]}
-              >
-                Coimbatore
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {workLocations.length > 0 ? (
+            <View style={[styles.segmentedControl, { borderColor: colors.primary }]}>
+              {workLocations.map((loc, idx) => {
+                const locName = loc.name || loc.locationName || `Location ${idx + 1}`;
+                const isActive = workLocation === locName;
+                return (
+                  <TouchableOpacity
+                    key={loc.id || idx}
+                    style={[
+                      styles.segmentTab,
+                      idx === 0 && styles.segmentTabLeft,
+                      idx === workLocations.length - 1 && styles.segmentTabRight,
+                      { backgroundColor: isActive ? colors.primary : 'transparent' },
+                    ]}
+                    onPress={() => setWorkLocation(locName)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.segmentTabText, { color: isActive ? '#FFFFFF' : colors.primary }]}>
+                      {locName}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : (
+            <Text style={{ color: colors.textSecondary }}>No work locations available</Text>
+          )}
         </View>
 
         {/* Cab Usage Preference */}
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
+          <Text style={[styles.sectionLabel, { color: colors.text }]}>
             Cab Usage Preference <Text style={{ color: colors.primary }}>*</Text>
           </Text>
           <View style={styles.radioGroup}>
@@ -145,32 +190,19 @@ const RequestCabStep1Screen = ({ navigation }) => {
                 <View
                   style={[
                     styles.radioOuter,
-                    {
-                      borderColor:
-                        cabPreference === option.value
-                          ? colors.primary
-                          : colors.border || '#D1D5DB',
-                    },
+                    { borderColor: cabPreference === option.value ? colors.primary : colors.border || '#D1D5DB' },
                   ]}
                 >
                   {cabPreference === option.value && (
-                    <View
-                      style={[styles.radioInner, { backgroundColor: colors.primary }]}
-                    />
+                    <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />
                   )}
                 </View>
                 <Text
                   style={[
                     styles.radioLabel,
                     {
-                      color:
-                        cabPreference === option.value
-                          ? colors.primary
-                          : colors.text,
-                      fontFamily:
-                        cabPreference === option.value
-                          ? typography.fontFamily.semiBold
-                          : typography.fontFamily.regular,
+                      color: cabPreference === option.value ? colors.primary : colors.text,
+                      fontWeight: cabPreference === option.value ? '600' : '400',
                     },
                   ]}
                 >
@@ -183,35 +215,18 @@ const RequestCabStep1Screen = ({ navigation }) => {
 
         {/* Home Location */}
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
+          <Text style={[styles.sectionLabel, { color: colors.text }]}>
             Home Location <Text style={{ color: colors.primary }}>*</Text>
           </Text>
           <View
-            style={[
-              styles.inputContainer,
-              {
-                backgroundColor: '#FFFFFF',
-                borderColor: colors.border || '#E5E7EB',
-              },
-            ]}
+            style={[styles.inputContainer, { backgroundColor: '#FFFFFF', borderColor: colors.border || '#E5E7EB' }]}
           >
-            <Ionicons
-              name="location-outline"
-              size={20}
-              color={colors.primary}
-              style={styles.inputIcon}
-            />
+            <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
             <TextInput
-              style={[
-                styles.textInput,
-                {
-                  color: colors.text,
-                  fontFamily: typography.fontFamily.regular,
-                },
-              ]}
+              style={[styles.textInput, { color: colors.text }]}
               value={homeLocation}
               onChangeText={setHomeLocation}
-              placeholder="Chromepet"
+              placeholder="Enter your home location"
               placeholderTextColor={colors.textTertiary || '#9CA3AF'}
             />
           </View>
@@ -220,7 +235,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
         {/* Pickup & Drop Point */}
         <View style={styles.section}>
           <View style={styles.pickupHeaderRow}>
-            <Text style={[styles.sectionLabel, { color: colors.text, fontFamily: typography.fontFamily.semiBold }]}>
+            <Text style={[styles.sectionLabel, { color: colors.text }]}>
               Pickup &amp; Drop Point <Text style={{ color: colors.primary }}>*</Text>
             </Text>
             <TouchableOpacity
@@ -232,135 +247,111 @@ const RequestCabStep1Screen = ({ navigation }) => {
                 style={[
                   styles.checkbox,
                   {
-                    borderColor: differentDrop
-                      ? colors.primary
-                      : colors.border || '#D1D5DB',
+                    borderColor: differentDrop ? colors.primary : colors.border || '#D1D5DB',
                     backgroundColor: differentDrop ? colors.primary : '#FFFFFF',
                   },
                 ]}
               >
-                {differentDrop && (
-                  <Ionicons name="checkmark" size={12} color="#FFFFFF" />
-                )}
+                {differentDrop && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
               </View>
-              <Text
-                style={[
-                  styles.checkboxLabel,
-                  {
-                    color: colors.textSecondary,
-                    fontFamily: typography.fontFamily.regular,
-                  },
-                ]}
-              >
+              <Text style={[styles.checkboxLabel, { color: colors.textSecondary }]}>
                 Different Drop Point
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* Dropdown */}
+          {/* Pickup Dropdown */}
           <TouchableOpacity
-            style={[
-              styles.dropdownContainer,
-              {
-                backgroundColor: '#FFFFFF',
-                borderColor: colors.border || '#E5E7EB',
-              },
-            ]}
+            style={[styles.dropdownContainer, { backgroundColor: '#FFFFFF', borderColor: colors.border || '#E5E7EB' }]}
+            onPress={() => { setShowPickupDropdown(!showPickupDropdown); setShowDropDropdown(false); }}
             activeOpacity={0.8}
           >
-            <Ionicons
-              name="location"
-              size={20}
-              color={colors.primary}
-              style={styles.inputIcon}
-            />
-            <Text
-              style={[
-                styles.dropdownText,
-                {
-                  color: colors.text,
-                  fontFamily: typography.fontFamily.medium,
-                  flex: 1,
-                },
-              ]}
-            >
-              {pickupPoint}
+            <Ionicons name="location" size={20} color={colors.primary} style={styles.inputIcon} />
+            <Text style={[styles.dropdownText, { color: pickupPoint ? colors.text : colors.textTertiary || '#9CA3AF', flex: 1 }]}>
+              {pickupPoint || 'Select pickup point'}
             </Text>
-            <Ionicons
-              name="chevron-down"
-              size={20}
-              color={colors.textSecondary || '#6B7280'}
-            />
+            <Ionicons name="chevron-down" size={20} color={colors.textSecondary || '#6B7280'} />
           </TouchableOpacity>
-
-          {/* Subtext */}
-          <Text
-            style={[
-              styles.distanceSubtext,
-              {
-                color: colors.textSecondary || '#6B7280',
-                fontFamily: typography.fontFamily.regular,
-              },
-            ]}
-          >
-            1.6kms from your location
-          </Text>
-        </View>
-
-        {/* Map Placeholder */}
-        <View style={styles.mapPlaceholder}>
-          <View style={styles.mapInner}>
-            <Text
-              style={[
-                styles.mapLabel,
-                {
-                  color: '#4B7A3E',
-                  fontFamily: typography.fontFamily.medium,
-                },
-              ]}
-            >
-              Map View
-            </Text>
-            <View style={[styles.distanceBadge, { backgroundColor: colors.primary }]}>
-              <Ionicons name="navigate" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
-              <Text
-                style={[
-                  styles.distanceBadgeText,
-                  { fontFamily: typography.fontFamily.semiBold },
-                ]}
-              >
-                1.6kms
-              </Text>
+          {showPickupDropdown && (
+            <View style={[styles.dropdownList, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}>
+              <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
+                {stops.map((stop) => (
+                  <TouchableOpacity
+                    key={stop.id}
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      setPickupPoint(stop.name || stop.stopName);
+                      setShowPickupDropdown(false);
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, { color: colors.text }]}>
+                      {stop.name || stop.stopName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
-          </View>
+          )}
+
+          {/* Different Drop Point Dropdown */}
+          {differentDrop && (
+            <>
+              <Text style={[styles.sectionLabel, { color: colors.text, marginTop: spacing.md }]}>
+                Drop Point <Text style={{ color: colors.primary }}>*</Text>
+              </Text>
+              <TouchableOpacity
+                style={[styles.dropdownContainer, { backgroundColor: '#FFFFFF', borderColor: colors.border || '#E5E7EB' }]}
+                onPress={() => { setShowDropDropdown(!showDropDropdown); setShowPickupDropdown(false); }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="location" size={20} color={colors.primary} style={styles.inputIcon} />
+                <Text style={[styles.dropdownText, { color: dropPoint ? colors.text : colors.textTertiary || '#9CA3AF', flex: 1 }]}>
+                  {dropPoint || 'Select drop point'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color={colors.textSecondary || '#6B7280'} />
+              </TouchableOpacity>
+              {showDropDropdown && (
+                <View style={[styles.dropdownList, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}>
+                  <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
+                    {stops.map((stop) => (
+                      <TouchableOpacity
+                        key={stop.id}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setDropPoint(stop.name || stop.stopName);
+                          setShowDropDropdown(false);
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, { color: colors.text }]}>
+                          {stop.name || stop.stopName}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+            </>
+          )}
         </View>
 
-        {/* Bottom padding for sticky button */}
         <View style={{ height: spacing.xxxxl }} />
       </ScrollView>
 
       {/* Sticky Continue Button */}
       <View
-        style={[
-          styles.stickyFooter,
-          {
-            backgroundColor: colors.background,
-            borderTopColor: colors.border || '#F3F4F6',
-          },
-        ]}
+        style={[styles.stickyFooter, { backgroundColor: colors.background, borderTopColor: colors.border || '#F3F4F6' }]}
       >
         <TouchableOpacity
-          style={[styles.continueButton, { backgroundColor: colors.primary }]}
+          style={[
+            styles.continueButton,
+            { backgroundColor: (homeLocation && pickupPoint) ? colors.primary : colors.border || '#D1D5DB' },
+          ]}
           onPress={handleContinue}
           activeOpacity={0.85}
+          disabled={!homeLocation || !pickupPoint}
         >
-          <Text
-            style={[
-              styles.continueButtonText,
-              { fontFamily: typography.fontFamily.bold },
-            ]}
-          >
-            Continue →
+          <Text style={[styles.continueButtonText]}>
+            Continue  →
           </Text>
         </TouchableOpacity>
       </View>
@@ -369,9 +360,8 @@ const RequestCabStep1Screen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -379,222 +369,80 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
   },
-  avatarWrapper: {
-    marginRight: spacing.md,
-  },
+  avatarWrapper: { marginRight: spacing.md },
   avatar: {
     width: 44,
     height: 44,
-    borderRadius: spacing.borderRadius.full,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.lg,
-    fontFamily: 'Inter-Bold',
-  },
-  headerTextWrapper: {
-    flexDirection: 'column',
-  },
-  greetingText: {
-    fontSize: typography.fontSize.sm,
-    lineHeight: typography.lineHeight.sm,
-  },
-  greetingName: {
-    fontSize: typography.fontSize.base,
-    lineHeight: typography.lineHeight.base,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.base,
-    paddingTop: spacing.md,
-  },
+  avatarText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  headerTextWrapper: { flexDirection: 'column' },
+  greetingText: { fontSize: 13, lineHeight: 18 },
+  greetingName: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
+  scrollContent: { paddingHorizontal: spacing.base, paddingTop: spacing.md },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: spacing.sm,
   },
-  screenTitle: {
-    fontSize: typography.fontSize.xl,
-    lineHeight: typography.lineHeight.xl,
-  },
-  stepIndicator: {
-    fontSize: typography.fontSize.sm,
-    lineHeight: typography.lineHeight.sm,
-  },
-  progressBarTrack: {
-    height: 6,
-    borderRadius: spacing.borderRadius.full,
-    overflow: 'hidden',
-    marginBottom: spacing.xl,
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: spacing.borderRadius.full,
-  },
-  section: {
-    marginBottom: spacing.xl,
-  },
-  sectionLabel: {
-    fontSize: typography.fontSize.md,
-    lineHeight: typography.lineHeight.md,
-    marginBottom: spacing.sm,
-  },
+  screenTitle: { fontSize: 20, fontWeight: '700' },
+  stepIndicator: { fontSize: 13 },
+  progressBarTrack: { height: 6, borderRadius: 99, overflow: 'hidden', marginBottom: spacing.xl },
+  progressBarFill: { height: '100%', borderRadius: 99 },
+  section: { marginBottom: spacing.xl },
+  sectionLabel: { fontSize: 15, fontWeight: '600', marginBottom: spacing.sm },
   segmentedControl: {
     flexDirection: 'row',
     borderWidth: 1.5,
-    borderRadius: spacing.borderRadius.full,
+    borderRadius: 99,
     overflow: 'hidden',
-    alignSelf: 'stretch',
   },
-  segmentTab: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segmentTabLeft: {
-    borderTopLeftRadius: spacing.borderRadius.full,
-    borderBottomLeftRadius: spacing.borderRadius.full,
-  },
-  segmentTabRight: {
-    borderTopRightRadius: spacing.borderRadius.full,
-    borderBottomRightRadius: spacing.borderRadius.full,
-  },
-  segmentTabText: {
-    fontSize: typography.fontSize.md,
-    lineHeight: typography.lineHeight.md,
-  },
-  radioGroup: {
-    flexDirection: 'row',
-    gap: spacing.lg,
-  },
-  radioOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  radioOuter: {
-    width: 20,
-    height: 20,
-    borderRadius: spacing.borderRadius.full,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: spacing.borderRadius.full,
-  },
-  radioLabel: {
-    fontSize: typography.fontSize.md,
-    lineHeight: typography.lineHeight.md,
-  },
+  segmentTab: { flex: 1, paddingVertical: spacing.sm, alignItems: 'center', justifyContent: 'center' },
+  segmentTabLeft: { borderTopLeftRadius: 99, borderBottomLeftRadius: 99 },
+  segmentTabRight: { borderTopRightRadius: 99, borderBottomRightRadius: 99 },
+  segmentTabText: { fontSize: 15, fontWeight: '500' },
+  radioGroup: { flexDirection: 'row', gap: spacing.lg },
+  radioOption: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  radioOuter: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  radioInner: { width: 10, height: 10, borderRadius: 5 },
+  radioLabel: { fontSize: 15 },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: spacing.borderRadius.md,
+    borderRadius: 8,
     height: 50,
     paddingHorizontal: spacing.base,
   },
-  inputIcon: {
-    marginRight: spacing.sm,
-  },
-  textInput: {
-    flex: 1,
-    fontSize: typography.fontSize.md,
-    lineHeight: typography.lineHeight.md,
-    height: '100%',
-  },
-  pickupHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: spacing.borderRadius.xs,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxLabel: {
-    fontSize: typography.fontSize.sm,
-    lineHeight: typography.lineHeight.sm,
-  },
+  inputIcon: { marginRight: spacing.sm },
+  textInput: { flex: 1, fontSize: 15, height: '100%' },
+  pickupHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  checkboxLabel: { fontSize: 13 },
   dropdownContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: spacing.borderRadius.md,
+    borderRadius: 8,
     height: 50,
     paddingHorizontal: spacing.base,
   },
-  dropdownText: {
-    fontSize: typography.fontSize.md,
-    lineHeight: typography.lineHeight.md,
-  },
-  distanceSubtext: {
-    fontSize: typography.fontSize.sm,
-    lineHeight: typography.lineHeight.sm,
-    marginTop: spacing.xs,
-    marginLeft: spacing.xs,
-  },
-  mapPlaceholder: {
-    backgroundColor: '#E8F0E4',
-    borderRadius: spacing.borderRadius.lg,
-    height: 180,
+  dropdownText: { fontSize: 15 },
+  dropdownList: {
+    borderWidth: 1,
+    borderRadius: 8,
+    marginTop: 4,
     overflow: 'hidden',
-    marginBottom: spacing.md,
   },
-  mapInner: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  mapLabel: {
-    fontSize: typography.fontSize.lg,
-    lineHeight: typography.lineHeight.lg,
-  },
-  distanceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: spacing.borderRadius.full,
-  },
-  distanceBadgeText: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.sm,
-    lineHeight: typography.lineHeight.sm,
-  },
-  stickyFooter: {
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-  },
-  continueButton: {
-    height: 52,
-    borderRadius: spacing.borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  continueButtonText: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.base,
-    lineHeight: typography.lineHeight.base,
-  },
+  dropdownItem: { paddingVertical: 12, paddingHorizontal: spacing.base, borderBottomWidth: 0.5, borderBottomColor: '#F3F4F6' },
+  dropdownItemText: { fontSize: 14 },
+  stickyFooter: { paddingHorizontal: spacing.base, paddingVertical: spacing.md, borderTopWidth: 1 },
+  continueButton: { height: 52, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  continueButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 });
 
 export default RequestCabStep1Screen;

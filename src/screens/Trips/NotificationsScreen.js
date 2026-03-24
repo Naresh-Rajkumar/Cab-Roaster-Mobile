@@ -1,53 +1,21 @@
 /**
  * Notifications Screen — Figma: Employee Handoff 09/02/2026 "Notifications"
  */
-import React, { useState } from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
-
-const MOCK_NOTIFICATIONS = [
-  {
-    id: 'n1',
-    title: 'Shift Timing Updated',
-    body: 'Your shift for next week is changed to 10:00 AM to 7:00 PM',
-    time: '2 mins ago',
-    unread: true,
-    iconName: 'calendar',
-    iconBg: '#FEF3C7',
-    iconColor: '#F59E0B',
-    category: 'today',
-  },
-  {
-    id: 'n2',
-    title: 'Office closed for Holiday',
-    body: 'Reminder: The office will remain closed tomorrow for the public holiday.',
-    time: '1 hour ago',
-    unread: true,
-    iconName: 'business',
-    iconBg: '#DCFCE7',
-    iconColor: '#22C55E',
-    category: 'today',
-  },
-  {
-    id: 'n3',
-    title: 'Route Deviation Alert',
-    body: 'Your cab took a different route due to heavy traffic on the highway.',
-    time: 'Yesterday',
-    unread: false,
-    iconName: 'map',
-    iconBg: '#FEE2E2',
-    iconColor: '#EF4444',
-    category: 'yesterday',
-  },
-];
+import { fetchNotifications, markNotificationsRead } from '../../redux/slices/appSlice';
 
 const NotificationItem = ({ item, colors }) => (
   <View style={[styles.notifCard, { backgroundColor: colors.surface }]}>
@@ -72,15 +40,30 @@ const NotificationItem = ({ item, colors }) => (
 const NotificationsScreen = () => {
   const { theme } = useTheme();
   const colors = theme.colors;
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  const dispatch = useDispatch();
 
-  const todayItems = notifications.filter((n) => n.category === 'today');
-  const yesterdayItems = notifications.filter((n) => n.category === 'yesterday');
-  const unreadCount = notifications.filter((n) => n.unread).length;
+  const notifications = useSelector((state) => state.app.notifications);
+  const unreadCount = useSelector((state) => state.app.unreadCount);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  useEffect(() => {
+    setIsLoading(true);
+    dispatch(fetchNotifications()).finally(() => setIsLoading(false));
+  }, [dispatch]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    dispatch(fetchNotifications()).finally(() => setRefreshing(false));
+  };
 
   const markAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
+    dispatch(markNotificationsRead());
   };
+
+  // Group by category field or date proximity
+  const todayItems = notifications.filter((n) => n.category === 'today' || !n.category);
+  const yesterdayItems = notifications.filter((n) => n.category === 'yesterday');
 
   const sections = [
     ...(todayItems.length > 0
@@ -104,23 +87,35 @@ const NotificationsScreen = () => {
         )}
       </View>
 
-      <FlatList
-        data={sections}
-        keyExtractor={(item, idx) => item.id ?? `header-${idx}`}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => {
-          if (item.type === 'header') {
-            return (
-              <Text style={[styles.sectionLabel, { color: colors.text }]}>{item.label}</Text>
-            );
+      {isLoading ? (
+        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+      ) : (
+        <FlatList
+          data={sections}
+          keyExtractor={(item, idx) => item.id ?? `header-${idx}`}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
           }
-          return <NotificationItem item={item} colors={colors} />;
-        }}
-        ItemSeparatorComponent={({ leadingItem }) =>
-          leadingItem?.type === 'item' ? <View style={{ height: 10 }} /> : null
-        }
-      />
+          ListEmptyComponent={
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary, textAlign: 'center', marginTop: 40 }]}>
+              No notifications
+            </Text>
+          }
+          renderItem={({ item }) => {
+            if (item.type === 'header') {
+              return (
+                <Text style={[styles.sectionLabel, { color: colors.text }]}>{item.label}</Text>
+              );
+            }
+            return <NotificationItem item={item} colors={colors} />;
+          }}
+          ItemSeparatorComponent={({ leadingItem }) =>
+            leadingItem?.type === 'item' ? <View style={{ height: 10 }} /> : null
+          }
+        />
+      )}
     </SafeAreaView>
   );
 };

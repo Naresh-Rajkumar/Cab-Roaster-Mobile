@@ -10,18 +10,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Avatar } from '../../components';
-
-const DEFAULT_STOP = {
-  stopName: 'BSR Mall',
-  stopNumber: 3,
-  employees: [
-    { id: 'e1', name: 'James Parker', time: '8:45 AM', boarded: true },
-    { id: 'e2', name: 'Miss Ian Bosco', time: '8:45 AM', boarded: true },
-    { id: 'e3', name: 'Lana Mante', time: '8:45 AM', boarded: false },
-  ],
-};
+import { updateStopHandoff } from '../../redux/slices/driverSlice';
 
 const EmployeeCard = ({ emp, primaryColor, colors, onToggle }) => (
   <View style={[styles.card, { borderBottomColor: colors.borderLight }]}>
@@ -57,20 +49,30 @@ const ordinalSuffix = (n) => {
 const AttendanceScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
-  const stopData = route?.params?.stop ?? DEFAULT_STOP;
+  const dispatch = useDispatch();
+  const stopData = route?.params?.stop ?? {};
 
-  const [employees, setEmployees] = useState(stopData.employees ?? DEFAULT_STOP.employees);
+  const [employees, setEmployees] = useState(
+    (stopData.employees ?? []).map((e) => ({
+      ...e,
+      boarded: e.boarded ?? e.status === 'picked_up',
+    }))
+  );
 
   const boardedCount = employees.filter((e) => e.boarded).length;
   const total = employees.length;
-  const stopNo = stopData.stopNumber ?? DEFAULT_STOP.stopNumber;
-  const stopName = stopData.stopName ?? DEFAULT_STOP.stopName;
+  const stopNo = stopData.stopNumber ?? stopData.number ?? 1;
+  const stopName = stopData.stopName ?? stopData.name ?? 'Stop';
 
   const toggle = (id, val) => {
     setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, boarded: val } : e)));
   };
 
   const handleConfirm = () => {
+    const stopId = stopData.id ?? stopData.stopId;
+    if (stopId) {
+      dispatch(updateStopHandoff({ stopId, employeeId: null, status: 'arrived' }));
+    }
     Alert.alert(
       'Attendance Confirmed',
       `${boardedCount} of ${total} employees boarded at ${stopName}.`,

@@ -1,6 +1,113 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { tripService } from '../../services/api/tripService';
 
+// ─── Response helpers ─────────────────────────────────────────────────────────
+
+/** Unwrap { success, message, data } BE envelope. */
+function unwrap(res) {
+  const body = res?.data;
+  if (body && typeof body === 'object' && 'success' in body) {
+    return body.data ?? null;
+  }
+  return body ?? null;
+}
+
+function toArray(val) {
+  if (Array.isArray(val)) return val;
+  if (val && Array.isArray(val.data)) return val.data;
+  return [];
+}
+
+function formatTime(isoOrStr) {
+  if (!isoOrStr) return '';
+  if (!/^\d{4}-\d{2}-\d{2}/.test(isoOrStr)) return isoOrStr;
+  try {
+    return new Date(isoOrStr).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return isoOrStr;
+  }
+}
+
+// ─── Normalizers ─────────────────────────────────────────────────────────────
+
+/** Normalize a BE trip object for employee trip list screens. */
+function normalizeTripForEmployee(trip) {
+  if (!trip) return null;
+  const id = String(trip.id ?? trip._id ?? '');
+  const status = trip.status ?? 'scheduled';
+
+  // For employee trips the screen shows from/to, date, vehicle, icon
+  return {
+    id,
+    tripNumber: trip.tripNumber ?? `Trip #${id}`,
+    title: trip.title ?? (status === 'completed' ? 'Completed Ride' : 'Upcoming Ride'),
+    date: trip.date ?? trip.dateLabel ?? formatTime(trip.scheduledStart),
+    from: trip.from ?? trip.startLocation ?? trip.pickup ?? trip.pickupLocation ?? '',
+    to: trip.to ?? trip.endLocation ?? trip.dropoff ?? trip.dropLocation ?? '',
+    vehicleNo: trip.vehicleNo ?? trip.cabNumber ?? trip.cab?.cabNumber ?? '',
+    vehicleType: trip.vehicleType ?? trip.cab?.type ?? '',
+    status,
+    icon: trip.icon ?? (trip.type === 'drop' ? 'home' : 'business'),
+    iconBg: trip.iconBg ?? '#DCFCE7',
+    iconColor: trip.iconColor ?? '#22C55E',
+    // Keep original fields too for detail screens
+    ...trip,
+    id, // ensure id stays string
+  };
+}
+
+/** Normalize a single trip for the detail view. */
+function normalizeTripDetail(trip) {
+  if (!trip) return null;
+  return {
+    id: String(trip.id ?? trip._id ?? ''),
+    tripId: trip.tripId ?? trip.id,
+    tripNumber: trip.tripNumber,
+    type: trip.type ?? trip.tripType ?? 'pickup',
+    status: trip.status ?? 'scheduled',
+    pickup: trip.pickup ?? trip.startLocation ?? trip.pickupLocation ?? '',
+    dropoff: trip.dropoff ?? trip.endLocation ?? trip.dropLocation ?? '',
+    distance: trip.distance ?? '',
+    eta: trip.eta ?? formatTime(trip.scheduledEnd),
+    scheduledTime: trip.scheduledTime ?? formatTime(trip.scheduledStart),
+    driverName: trip.driverName ?? trip.driver?.name ?? '',
+    vehicleNo: trip.vehicleNo ?? trip.cabNumber ?? trip.cab?.cabNumber ?? '',
+    vehicleType: trip.vehicleType ?? trip.cab?.type ?? '',
+    driverPhone: trip.driverPhone ?? trip.driver?.phone ?? '',
+    otp: trip.otp ?? '',
+    ...trip,
+    id: String(trip.id ?? trip._id ?? ''),
+  };
+}
+
+/** Normalize a BE stop object. */
+function normalizeStop(stop) {
+  if (!stop) return null;
+  return {
+    id: String(stop.id ?? stop._id ?? ''),
+    time: stop.time ?? stop.scheduledTime ?? formatTime(stop.scheduledArrival) ?? '',
+    actualTime: stop.actualTime ?? stop.arrivedAt ?? null,
+    name: stop.stopName ?? stop.name ?? stop.stop?.stopName ?? '',
+    status: stop.status ?? 'pending',
+    isDestination: stop.isDestination ?? stop.type === 'destination' ?? false,
+    employees: toArray(stop.employees ?? stop.passengers).map(normalizeEmployee),
+  };
+}
+
+function normalizeEmployee(emp) {
+  if (!emp) return null;
+  return {
+    id: String(emp.id ?? emp._id ?? emp.employeeId ?? ''),
+    name: emp.name ?? emp.employeeName ?? '',
+    phone: emp.phone ?? emp.phoneNumber ?? '',
+    status: emp.status ?? emp.handoffStatus ?? 'pending',
+    avatar: emp.avatar ?? null,
+  };
+}
+
 // ─── Thunks ───────────────────────────────────────────────────────────────────
 
 export const fetchTrips = createAsyncThunk(
@@ -8,9 +115,13 @@ export const fetchTrips = createAsyncThunk(
   async (params, { rejectWithValue }) => {
     try {
       const response = await tripService.getTrips(params);
-      return { data: response.data, type: params?.type || 'upcoming' };
+      const raw = unwrap(response);
+      const trips = toArray(raw).map(normalizeTripForEmployee);
+      return { data: trips, type: params?.type || 'upcoming' };
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch trips');
+      return rejectWithValue(
+        error.response?.data?.message || error.message || 'Failed to fetch trips'
+      );
     }
   }
 );
@@ -20,9 +131,21 @@ export const fetchTripDetails = createAsyncThunk(
   async (tripId, { rejectWithValue }) => {
     try {
       const response = await tripService.getTripDetails(tripId);
-      return response.data;
+      const raw = unwrap(response) ?? response?.data;
+
+      // Mock returns { trip: {...}, driver: {...} }
+      // BE likely returns the trip object directly
+      if (raw && 'trip' in raw) {
+        return { trip: normalizeTripDetail(raw.trip), driver: raw.driver ?? null };
+      }
+      return {
+        trip: normalizeTripDetail(raw),
+        driver: raw?.driver ?? null,
+      };
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch trip details');
+      return rejectWithValue(
+        error.response?.data?.message || error.message || 'Failed to fetch trip details'
+      );
     }
   }
 );
@@ -32,9 +155,12 @@ export const fetchTripStops = createAsyncThunk(
   async (tripId, { rejectWithValue }) => {
     try {
       const response = await tripService.getTripStops(tripId);
-      return response.data;
+      const raw = unwrap(response);
+      return toArray(raw).map(normalizeStop).filter(Boolean);
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch stops');
+      return rejectWithValue(
+        error.response?.data?.message || error.message || 'Failed to fetch stops'
+      );
     }
   }
 );
@@ -44,9 +170,15 @@ export const fetchCurrentRide = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const response = await tripService.getNextTrip();
-      return response.data;
+      const raw = unwrap(response);
+      // Returns a list (limit=1) — take the first trip
+      const list = toArray(raw);
+      const trip = list[0] ?? raw;
+      return trip ? normalizeTripDetail(trip) : null;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch current ride');
+      return rejectWithValue(
+        error.response?.data?.message || error.message || 'Failed to fetch current ride'
+      );
     }
   }
 );
@@ -110,6 +242,7 @@ const tripSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload;
       })
+
       .addCase(fetchTripDetails.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -123,9 +256,11 @@ const tripSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload;
       })
+
       .addCase(fetchTripStops.fulfilled, (state, action) => {
         state.tripStops = action.payload;
       })
+
       .addCase(fetchCurrentRide.pending, (state) => {
         state.isLoading = true;
       })

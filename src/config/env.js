@@ -9,12 +9,12 @@
  */
 
 // Master switch: true = mock data, false = real API
-export const USE_MOCK = true;
+export const USE_MOCK = false;
 
 // API base URL (used only when USE_MOCK = false)
 export const API_BASE_URL = __DEV__
-  ? 'http://localhost:3000/api'
-  : 'https://api.vcommute.com/api';
+  ? 'http://localhost:4001/api/v1'
+  : 'https://api.vcommute.com/api/v1';
 
 // Simulated network delay range (ms) — realistic UX while mocking
 export const MOCK_DELAY_MIN = 500;

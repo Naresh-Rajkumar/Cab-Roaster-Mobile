@@ -1,17 +1,17 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { authService } from '../../services/api/authService';
+import { setAuthToken } from '../../services/axiosConfig';
 
 // ─── Thunks ───────────────────────────────────────────────────────────────────
 
-/**
- * loginUser — sends OTP to the phone number.
- * Does NOT authenticate the user yet (that happens after OTP verification).
- */
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async (credentials, { rejectWithValue }) => {
     try {
       const response = await authService.login(credentials);
+      if (response.data?.data?.accessToken) {
+        setAuthToken(response.data.data.accessToken);
+      }
       return response.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Login failed');
@@ -19,15 +19,20 @@ export const loginUser = createAsyncThunk(
   }
 );
 
+// verifyOTP — NestJS uses single-step employee-login (no separate OTP endpoint)
+// Maps phone + otp to employee-login credentials
 export const verifyOTP = createAsyncThunk(
   'auth/verifyOTP',
   async ({ phone, otp }, { getState, rejectWithValue }) => {
     try {
       const role = getState().auth.pendingRole || 'employee';
-      const response = await authService.verifyOTP(phone, otp, role);
+      const response = await authService.login({ phone, password: otp, role });
+      if (response.data?.data?.accessToken) {
+        setAuthToken(response.data.data.accessToken);
+      }
       return response.data;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'OTP verification failed');
+      return rejectWithValue(error.response?.data?.message || error.message || 'Verification failed');
     }
   }
 );
@@ -39,6 +44,20 @@ export const logoutUser = createAsyncThunk(
       await authService.logout();
     } catch {
       // Always allow local logout even if server call fails
+    } finally {
+      setAuthToken(null);
+    }
+  }
+);
+
+export const fetchProfile = createAsyncThunk(
+  'auth/fetchProfile',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await authService.getProfile();
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch profile');
     }
   }
 );
@@ -50,9 +69,10 @@ const authSlice = createSlice({
   initialState: {
     user: null,
     token: null,
-    role: null,         // 'employee' | 'driver' — set after OTP verified
-    pendingRole: null,  // selected on RoleSelection screen before login
+    role: null,
+    pendingRole: null,
     isAuthenticated: false,
+    needsOnboarding: false,
     isLoading: false,
     error: null,
   },
@@ -67,6 +87,9 @@ const authSlice = createSlice({
     },
     setRole: (state, action) => {
       state.role = action.payload;
+    },
+    completeOnboarding: (state) => {
+      state.needsOnboarding = false;
     },
     setPendingRole: (state, action) => {
       state.pendingRole = action.payload;
@@ -84,51 +107,67 @@ const authSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // loginUser — only sends OTP, does NOT set isAuthenticated
     builder
       .addCase(loginUser.pending, (state) => {
         state.isLoading = true;
         state.error = null;
       })
-      .addCase(loginUser.fulfilled, (state) => {
+      .addCase(loginUser.fulfilled, (state, action) => {
         state.isLoading = false;
-        // OTP sent — wait for verifyOTP to authenticate
+        const data = action.payload?.data || action.payload;
+        state.user = data?.user || null;
+        state.token = data?.accessToken || null;
+        state.role = data?.user?.role || state.pendingRole || 'employee';
+        state.isAuthenticated = !!(data?.accessToken);
+        // Employee with no home_address needs onboarding (cab setup)
+        const role = state.role;
+        const user = data?.user;
+        if (role !== 'driver' && user && !user.homeAddress && !user.home_address) {
+          state.needsOnboarding = true;
+        }
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload;
-      });
+      })
 
-    // verifyOTP — authenticates the user
-    builder
       .addCase(verifyOTP.pending, (state) => {
         state.isLoading = true;
         state.error = null;
       })
       .addCase(verifyOTP.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.user = action.payload.user;
-        state.token = action.payload.token;
-        // Use role from response, fallback to the role selected before login
-        state.role = action.payload.user?.role || state.pendingRole || 'employee';
-        state.isAuthenticated = true;
+        const data = action.payload?.data || action.payload;
+        state.user = data?.user || null;
+        state.token = data?.accessToken || null;
+        state.role = data?.user?.role || state.pendingRole || 'employee';
+        state.isAuthenticated = !!(data?.accessToken);
+        const role = state.role;
+        const user = data?.user;
+        if (role !== 'driver' && user && !user.homeAddress && !user.home_address) {
+          state.needsOnboarding = true;
+        }
       })
       .addCase(verifyOTP.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload;
-      });
+      })
 
-    // logoutUser
-    builder.addCase(logoutUser.fulfilled, (state) => {
-      state.user = null;
-      state.token = null;
-      state.role = null;
-      state.pendingRole = null;
-      state.isAuthenticated = false;
-      state.error = null;
-    });
+      .addCase(logoutUser.fulfilled, (state) => {
+        state.user = null;
+        state.token = null;
+        state.role = null;
+        state.pendingRole = null;
+        state.isAuthenticated = false;
+        state.error = null;
+      })
+
+      .addCase(fetchProfile.fulfilled, (state, action) => {
+        const data = action.payload?.data || action.payload;
+        if (data) state.user = data;
+      });
   },
 });
 
-export const { setUser, setToken, setRole, setPendingRole, logout, clearError } = authSlice.actions;
+export const { setUser, setToken, setRole, setPendingRole, completeOnboarding, logout, clearError } = authSlice.actions;
 export default authSlice.reducer;

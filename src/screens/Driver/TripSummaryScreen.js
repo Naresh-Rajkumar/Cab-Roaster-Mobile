@@ -9,9 +9,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { StatusBadge, Avatar } from '../../components';
-import { MOCK_TRIP_SUMMARY } from '../../services/mock/mockData';
+import { saveTripData } from '../../redux/slices/driverSlice';
 
 const MetaStat = ({ label, value, colors }) => (
   <View style={styles.metaStat}>
@@ -65,12 +66,31 @@ const SummaryStopItem = ({ stop, isLast, colors }) => (
 const TripSummaryScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
-  const summary = route?.params?.summary ?? MOCK_TRIP_SUMMARY;
+  const dispatch = useDispatch();
+
+  const tripSummary = useSelector((state) => state.driver.tripSummary);
+  const routeStops = useSelector((state) => state.trip.tripStops);
+
+  // Build summary from Redux state or route params fallback
+  const summaryBase = route?.params?.summary ?? tripSummary ?? {};
+  const summary = {
+    tripNumber: summaryBase.tripNumber ?? summaryBase.tripId ?? 'Trip',
+    vehicle: summaryBase.vehicle ?? summaryBase.cabNumber ?? '',
+    vehicleType: summaryBase.vehicleType ?? '',
+    startedAt: summaryBase.startedAt ?? '',
+    endedAt: summaryBase.endedAt ?? summaryBase.completedAt ?? '',
+    totalPickups: summaryBase.totalPickups ?? routeStops.reduce((n, s) => n + (s.employees?.filter((e) => e.status === 'picked_up').length ?? 0), 0),
+    totalStops: summaryBase.totalStops ?? routeStops.length,
+    totalDistance: summaryBase.totalDistance ?? summaryBase.distance ?? '',
+    routeStops: summaryBase.routeStops ?? routeStops,
+  };
 
   const handleSaveTripData = () => {
-    Alert.alert('Trip Saved', 'Trip data has been saved successfully!', [
-      { text: 'OK', onPress: () => navigation.popToTop() },
-    ]);
+    dispatch(saveTripData()).finally(() => {
+      Alert.alert('Trip Saved', 'Trip data has been saved successfully!', [
+        { text: 'OK', onPress: () => navigation.popToTop() },
+      ]);
+    });
   };
 
   return (

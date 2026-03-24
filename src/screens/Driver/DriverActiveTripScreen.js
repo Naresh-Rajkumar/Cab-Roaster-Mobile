@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { StatusBadge, Avatar } from '../../components';
 import { SCREENS, TRIP_STATUS } from '../../constants';
-import { MOCK_ROUTE_STOPS } from '../../services/mock/mockData';
+import { fetchTripStops } from '../../redux/slices/tripSlice';
+import { startTrip, endTrip } from '../../redux/slices/driverSlice';
+import { useTrackingSocket } from '../../hooks/useTrackingSocket';
+import { useDriverLocation } from '../../hooks/useDriverLocation';
 
 const { width } = Dimensions.get('window');
 const SLIDE_TRACK_WIDTH = width - 64;
@@ -130,27 +134,65 @@ const StopItem = ({ stop, index, isLast, colors, onConfirmAttendance }) => {
 const DriverActiveTripScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
   const trip = route?.params?.trip ?? {};
+  const tripId = trip?.id;
 
-  const [stops, setStops] = useState(MOCK_ROUTE_STOPS);
+  // Redux state
+  const tripStops = useSelector((state) => state.trip.tripStops);
+  const stopsLoading = useSelector((state) => state.trip.isLoading);
+  const driverLoading = useSelector((state) => state.driver.isLoading);
+  const activeTrip = useSelector((state) => state.driver.activeTrip);
+  const user = useSelector((state) => state.auth.user);
+
+  // Socket.IO — emit GPS while trip is active
+  const { emitLocation, connected: socketConnected } = useTrackingSocket();
+  const tripMeta = {
+    cabId: trip?.cabId ?? activeTrip?.cabId ?? null,
+    driverId: user?.id ?? null,
+    tripId: tripId ?? null,
+  };
+  const { location, isTracking, startTracking, stopTracking } = useDriverLocation(emitLocation, tripMeta);
+
+  // Local stops state (synced from Redux, allows in-screen status updates)
+  const [stops, setStops] = useState([]);
   const [tripStarted, setTripStarted] = useState(false);
 
+  // Load stops from API when screen mounts
+  useEffect(() => {
+    if (tripId) {
+      dispatch(fetchTripStops(tripId));
+    }
+  }, [tripId, dispatch]);
+
+  // Sync local stops from Redux
+  useEffect(() => {
+    if (tripStops && tripStops.length > 0) {
+      setStops(tripStops);
+    }
+  }, [tripStops]);
+
   const tripDetails = {
-    tripNumber: trip.tripNumber ?? 'Trip #231',
-    vehicle: trip.vehicle ?? 'TN 14 CV 3755',
-    vehicleType: trip.vehicleType ?? 'Ertiga',
-    startTime: '8:30 AM',
-    etaTime: '9:00 AM',
+    tripNumber: trip.tripNumber ?? `Trip #${tripId ?? ''}`,
+    vehicle: trip.vehicle ?? trip.cabNumber ?? '',
+    vehicleType: trip.vehicleType ?? '',
+    startTime: trip.pickup?.time ?? '',
+    etaTime: trip.destination?.eta ?? '',
     pickups: stops.reduce((acc, s) => acc + (s.employees?.length ?? 0), 0),
     totalStops: stops.filter((s) => !s.isDestination).length,
   };
 
   const handleStartTrip = () => {
+    if (tripId) {
+      dispatch(startTrip(tripId));
+    }
     setTripStarted(true);
+    // Start emitting GPS location to backend via socket
+    startTracking();
   };
 
   const handleConfirmAttendance = (stop) => {
-    navigation.navigate(SCREENS.ATTENDANCE, { stop });
+    navigation.navigate(SCREENS.ATTENDANCE, { stop, tripId });
   };
 
   const handleEndTrip = () => {
@@ -162,7 +204,13 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
         {
           text: 'End Trip',
           style: 'destructive',
-          onPress: () => navigation.navigate(SCREENS.TRIP_SUMMARY, { trip: tripDetails }),
+          onPress: () => {
+            stopTracking(); // Stop GPS emission
+            if (tripId) {
+              dispatch(endTrip({ tripId }));
+            }
+            navigation.navigate(SCREENS.TRIP_SUMMARY, { trip: tripDetails });
+          },
         },
       ]
     );

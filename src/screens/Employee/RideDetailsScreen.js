@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Avatar, StatusBadge } from '../../components';
 import { SCREENS } from '../../constants';
-import { MOCK_CURRENT_RIDE } from '../../services/mock/mockData';
+import { useSelector } from 'react-redux';
 
 const InfoRow = ({ icon, label, value, colors }) => (
   <View style={styles.infoRow}>
@@ -34,7 +34,8 @@ const InfoRow = ({ icon, label, value, colors }) => (
 const RideDetailsScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
-  const ride = route?.params?.ride ?? MOCK_CURRENT_RIDE;
+  const currentRide = useSelector((state) => state.trip.currentRide);
+  const ride = route?.params?.ride ?? currentRide ?? {};
 
   const handleCall = () => {
     if (ride?.driverPhone) {

@@ -12,11 +12,10 @@ import { mockAuthService } from '../mock/mockAuthService';
 import axiosInstance from '../axiosConfig';
 
 const realAuthService = {
-  login: (credentials) => axiosInstance.post('/auth/login', credentials),
-  verifyOTP: (phone, otp, role) => axiosInstance.post('/auth/verify-otp', { phone, otp, role }),
+  login: (credentials) => axiosInstance.post('/auth/employee-login', credentials),
   refreshToken: (token) => axiosInstance.post('/auth/refresh', { refreshToken: token }),
   logout: () => axiosInstance.post('/auth/logout'),
-  getProfile: () => axiosInstance.get('/auth/profile'),
+  getProfile: () => axiosInstance.get('/auth/me'),
 };
 
 // Single export — screens/thunks never need to know which is active

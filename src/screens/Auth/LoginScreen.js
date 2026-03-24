@@ -2,18 +2,31 @@
  * Login Screen — Figma: Onboarding-Employee "Login"
  * vCommute branding, preview cards, Sign In With Microsoft.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { SCREENS } from '../../constants';
+import { loginUser } from '../../redux/slices/authSlice';
+import { setAuthToken } from '../../services/axiosConfig';
+import axiosInstance from '../../services/axiosConfig';
+
+// Azure AD config
+const AZURE_TENANT_ID = '3bc90aa9-088f-4447-9eb2-ff13839e19dd';
+const AZURE_CLIENT_ID = '264d0ea6-fba2-4d90-aa74-bceeee062c44';
+const MS_AUTH_URL = `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize`;
 
 const PRIMARY = '#643ee8';
 const PRIMARY_LIGHT = '#f1ecff';
@@ -89,9 +102,105 @@ const MicrosoftIcon = () => (
 const LoginScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
+  const { isLoading, error } = useSelector((state) => state.auth);
 
-  const handleMicrosoftSignIn = () => {
-    navigation.navigate(SCREENS.REQUEST_CAB_STEP1);
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [msLoading, setMsLoading] = useState(false);
+
+  const isValid = phone.replace(/\D/g, '').length >= 10 && password.length >= 8;
+
+  const handleLogin = async () => {
+    const fullPhone = `+91-${phone.replace(/\D/g, '')}`;
+    const result = await dispatch(loginUser({ phone: fullPhone, password }));
+    if (loginUser.rejected.match(result)) {
+      Alert.alert('Login Failed', result.payload || 'Invalid credentials');
+    }
+  };
+
+  const handleMicrosoftSignIn = async () => {
+    try {
+      setMsLoading(true);
+      const redirectUri = Platform.OS === 'web'
+        ? window.location.origin
+        : 'vcommute://auth';
+      const nonce = Math.random().toString(36).substring(2);
+      const authUrl =
+        `${MS_AUTH_URL}?client_id=${AZURE_CLIENT_ID}` +
+        `&response_type=id_token` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&scope=${encodeURIComponent('openid profile email')}` +
+        `&response_mode=fragment` +
+        `&nonce=${nonce}`;
+
+      if (Platform.OS === 'web') {
+        // Open popup for web
+        const popup = window.open(authUrl, 'ms-login', 'width=500,height=700');
+        // Listen for the redirect back with id_token in hash
+        const checkPopup = setInterval(() => {
+          try {
+            if (!popup || popup.closed) {
+              clearInterval(checkPopup);
+              setMsLoading(false);
+              return;
+            }
+            const hash = popup.location.hash;
+            if (hash && hash.includes('id_token=')) {
+              clearInterval(checkPopup);
+              popup.close();
+              const params = new URLSearchParams(hash.substring(1));
+              const idToken = params.get('id_token');
+              if (idToken) {
+                exchangeMicrosoftToken(idToken);
+              } else {
+                setMsLoading(false);
+              }
+            }
+          } catch {
+            // Cross-origin — popup hasn't redirected back yet, keep waiting
+          }
+        }, 500);
+      } else {
+        // Native: use expo-web-browser
+        const WebBrowser = require('expo-web-browser');
+        const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+        if (result.type === 'success' && result.url) {
+          const hash = result.url.split('#')[1] || '';
+          const params = new URLSearchParams(hash);
+          const idToken = params.get('id_token');
+          if (idToken) {
+            await exchangeMicrosoftToken(idToken);
+            return;
+          }
+        }
+        setMsLoading(false);
+      }
+    } catch (err) {
+      Alert.alert('Login Failed', err.message || 'Microsoft login failed');
+      setMsLoading(false);
+    }
+  };
+
+  const exchangeMicrosoftToken = async (idToken) => {
+    try {
+      const res = await axiosInstance.post('/auth/microsoft', { idToken });
+      const data = res.data?.data ?? res.data;
+      if (data?.accessToken) {
+        setAuthToken(data.accessToken);
+        dispatch({
+          type: 'auth/loginUser/fulfilled',
+          payload: res.data,
+        });
+      } else {
+        Alert.alert('Login Failed', 'No access token received');
+      }
+    } catch (err) {
+      Alert.alert('Login Failed', err.response?.data?.message || err.message || 'Microsoft login failed');
+    } finally {
+      setMsLoading(false);
+    }
   };
 
   return (
@@ -103,6 +212,7 @@ const LoginScreen = ({ navigation }) => {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {/* App name */}
         <View style={styles.brandRow}>
@@ -122,21 +232,79 @@ const LoginScreen = ({ navigation }) => {
           <RoutePreviewCard colors={colors} />
         </View>
 
-        {/* Welcome section */}
+        {/* Login section */}
         <View style={styles.welcomeSection}>
           <Text style={[styles.welcomeTitle, { color: colors.text }]}>Welcome to vCommute</Text>
           <Text style={[styles.welcomeSub, { color: colors.textSecondary }]}>
-            Use your work account to access cab services
+            Sign in with your phone number
           </Text>
+
+          {/* Phone input */}
+          <View style={[styles.inputRow, { borderColor: colors.border, backgroundColor: '#fff' }]}>
+            <Text style={styles.countryCode}>+91</Text>
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Phone number"
+              placeholderTextColor={colors.textTertiary}
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              maxLength={10}
+            />
+          </View>
+
+          {/* Password input */}
+          <View style={[styles.inputRow, { borderColor: colors.border, backgroundColor: '#fff', marginTop: 12 }]}>
+            <Ionicons name="lock-closed-outline" size={18} color={colors.textTertiary} style={{ marginRight: 8 }} />
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Password"
+              placeholderTextColor={colors.textTertiary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Login button */}
+          <TouchableOpacity
+            style={[styles.loginBtn, { backgroundColor: isValid ? PRIMARY : '#c4b5fd', opacity: isLoading ? 0.7 : 1 }]}
+            onPress={handleLogin}
+            disabled={!isValid || isLoading}
+            activeOpacity={0.85}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.loginBtnText}>Sign In</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <Text style={[styles.dividerText, { color: colors.textTertiary }]}>or</Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          </View>
 
           {/* Sign In With Microsoft */}
           <TouchableOpacity
-            style={[styles.msButton, { borderColor: PRIMARY }]}
+            style={[styles.msButton, { borderColor: PRIMARY, opacity: msLoading ? 0.7 : 1 }]}
             onPress={handleMicrosoftSignIn}
             activeOpacity={0.85}
+            disabled={msLoading}
           >
-            <MicrosoftIcon />
-            <Text style={[styles.msButtonText, { color: PRIMARY }]}>Sign In With Microsoft</Text>
+            {msLoading ? (
+              <ActivityIndicator color={PRIMARY} size="small" />
+            ) : (
+              <>
+                <MicrosoftIcon />
+                <Text style={[styles.msButtonText, { color: PRIMARY }]}>Sign In With Microsoft</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -221,6 +389,31 @@ const styles = StyleSheet.create({
   welcomeSection: { alignItems: 'center' },
   welcomeTitle: { fontSize: 20, fontWeight: '700', marginBottom: 6, textAlign: 'center' },
   welcomeSub: { fontSize: 13, textAlign: 'center', marginBottom: 20 },
+
+  // Login inputs
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    paddingHorizontal: 16,
+  },
+  countryCode: { fontSize: 15, fontWeight: '600', color: '#312e3a', marginRight: 8 },
+  input: { flex: 1, fontSize: 15, height: '100%' },
+  loginBtn: {
+    width: '100%',
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  loginBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', width: '100%', marginVertical: 16 },
+  dividerLine: { flex: 1, height: 1 },
+  dividerText: { marginHorizontal: 12, fontSize: 13 },
 
   // Microsoft button
   msButton: {

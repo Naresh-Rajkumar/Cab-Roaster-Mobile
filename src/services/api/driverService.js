@@ -8,15 +8,18 @@ import { mockDriverService } from '../mock/mockDriverService';
 import axiosInstance from '../axiosConfig';
 
 const realDriverService = {
-  getDailyStats: () => axiosInstance.get('/driver/stats/daily'),
-  getNextTrip: () => axiosInstance.get('/driver/trips/next'),
-  getUpcomingTrips: () => axiosInstance.get('/driver/trips/upcoming'),
-  startTrip: (tripId) => axiosInstance.post(`/driver/trips/${tripId}/start`),
-  endTrip: (tripId, summary) => axiosInstance.post(`/driver/trips/${tripId}/end`, { summary }),
-  updateStopHandoff: (stopId, employeeId, status) =>
-    axiosInstance.patch(`/driver/stops/${stopId}/handoff`, { employeeId, status }),
-  getTripHistory: () => axiosInstance.get('/driver/trips/history'),
-  saveTripData: (tripId, data) => axiosInstance.post(`/driver/trips/${tripId}/save`, data),
+  getDailyStats: () => axiosInstance.get('/dashboard/stats'),
+  getNextTrip: () => axiosInstance.get('/trips', { params: { status: 'Upcoming', limit: 1 } }),
+  getUpcomingTrips: () => axiosInstance.get('/trips', { params: { status: 'Upcoming' } }),
+  startTrip: (tripId) => axiosInstance.post(`/trips/${tripId}/start`),
+  endTrip: (tripId) => axiosInstance.post(`/trips/${tripId}/complete`),
+  // arriveAtStop is the real BE endpoint; tripId required
+  arriveAtStop: (tripId, stopId) => axiosInstance.post(`/trips/${tripId}/stops/${stopId}/arrive`),
+  // updateStopHandoff maps to arriveAtStop — tripId must be provided
+  updateStopHandoff: (tripId, stopId) => axiosInstance.post(`/trips/${tripId}/stops/${stopId}/arrive`),
+  getTripHistory: () => axiosInstance.get('/trips', { params: { status: 'Completed' } }),
+  // saveTripData has no dedicated BE endpoint; resolves immediately (state cleanup only)
+  saveTripData: () => Promise.resolve({ data: { success: true } }),
 };
 
 export const driverService = USE_MOCK ? mockDriverService : realDriverService;

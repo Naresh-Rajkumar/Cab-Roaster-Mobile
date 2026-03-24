@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -26,143 +26,71 @@ import spacing from '../../theme/spacing.json';
 import typography from '../../theme/typography.json';
 import { SCREENS, HANDOFF_STATUS, TRIP_STATUS } from '../../constants';
 import { formatDate, getGreeting } from '../../utils';
-
-// Mock data for Employee Handoff
-const MOCK_HANDOFF_DATE = '09/02/2026';
-
-const MOCK_TRIPS = [
-  {
-    id: 'TR-1042',
-    status: TRIP_STATUS.IN_PROGRESS,
-    pickupLocation: 'Tech Park, Whitefield',
-    dropLocation: 'Manyata Tech Park',
-    scheduledTime: '08:30 AM',
-    employeeCount: 4,
-    stops: 4,
-    type: 'pickup',
-    vehicleNo: 'KA-01-AB-1234',
-    driverName: 'Rajesh Kumar',
-  },
-  {
-    id: 'TR-1043',
-    status: TRIP_STATUS.SCHEDULED,
-    pickupLocation: 'Electronic City Phase 1',
-    dropLocation: 'Bagmane Tech Park',
-    scheduledTime: '09:00 AM',
-    employeeCount: 3,
-    stops: 3,
-    type: 'pickup',
-    vehicleNo: 'KA-01-CD-5678',
-    driverName: 'Suresh Babu',
-  },
-  {
-    id: 'TR-1044',
-    status: TRIP_STATUS.COMPLETED,
-    pickupLocation: 'Koramangala 5th Block',
-    dropLocation: 'Embassy Golf Links',
-    scheduledTime: '07:30 AM',
-    employeeCount: 5,
-    stops: 5,
-    type: 'drop',
-    vehicleNo: 'KA-01-EF-9012',
-    driverName: 'Anil Sharma',
-  },
-];
-
-const MOCK_EMPLOYEES = [
-  {
-    id: '1',
-    name: 'Priya Sharma',
-    employeeId: 'EMP-2045',
-    avatar: null,
-    pickupPoint: 'Stop 1 - Marathahalli Bridge',
-    scheduledTime: '08:30 AM',
-    handoffStatus: HANDOFF_STATUS.PICKED_UP,
-    phone: '+91 98765 43210',
-    tripId: 'TR-1042',
-  },
-  {
-    id: '2',
-    name: 'Amit Patel',
-    employeeId: 'EMP-2078',
-    avatar: null,
-    pickupPoint: 'Stop 2 - Kundalahalli Gate',
-    scheduledTime: '08:40 AM',
-    handoffStatus: HANDOFF_STATUS.PENDING,
-    phone: '+91 98765 43211',
-    tripId: 'TR-1042',
-  },
-  {
-    id: '3',
-    name: 'Sneha Reddy',
-    employeeId: 'EMP-3012',
-    avatar: null,
-    pickupPoint: 'Stop 3 - ITPL Main Road',
-    scheduledTime: '08:50 AM',
-    handoffStatus: HANDOFF_STATUS.PENDING,
-    phone: '+91 98765 43212',
-    tripId: 'TR-1042',
-  },
-  {
-    id: '4',
-    name: 'Vikram Singh',
-    employeeId: 'EMP-3089',
-    avatar: null,
-    pickupPoint: 'Stop 4 - Hoodi Junction',
-    scheduledTime: '09:00 AM',
-    handoffStatus: HANDOFF_STATUS.NO_SHOW,
-    phone: '+91 98765 43213',
-    tripId: 'TR-1042',
-  },
-  {
-    id: '5',
-    name: 'Kavitha Nair',
-    employeeId: 'EMP-4015',
-    avatar: null,
-    pickupPoint: 'Stop 1 - Silk Board',
-    scheduledTime: '09:00 AM',
-    handoffStatus: HANDOFF_STATUS.PENDING,
-    phone: '+91 98765 43214',
-    tripId: 'TR-1043',
-  },
-];
+import { fetchTrips } from '../../redux/slices/tripSlice';
+import { fetchHandoffList } from '../../redux/slices/employeeSlice';
 
 const HandoffListScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('trips');
 
+  const selectedDate = useSelector((state) => state.app.selectedDate);
+  const upcomingTrips = useSelector((state) => state.trip.upcomingTrips);
+  const handoffList = useSelector((state) => state.employee.handoffList ?? []);
+
+  // Flatten employees from handoff list (array of stops with employees)
+  const employees = useMemo(() => {
+    if (Array.isArray(handoffList) && handoffList.length > 0 && handoffList[0]?.employees) {
+      // handoffList is stops array
+      return handoffList.flatMap((stop) =>
+        (stop.employees ?? []).map((emp) => ({
+          ...emp,
+          pickupPoint: stop.name ?? stop.stopName ?? '',
+          scheduledTime: stop.time ?? '',
+          handoffStatus: emp.status ?? emp.handoffStatus ?? HANDOFF_STATUS.PENDING,
+        }))
+      );
+    }
+    // handoffList is already a flat employee list
+    return handoffList;
+  }, [handoffList]);
+
+  useEffect(() => {
+    dispatch(fetchTrips({ type: 'upcoming', status: 'Upcoming' }));
+    dispatch(fetchHandoffList({ date: selectedDate }));
+  }, [dispatch, selectedDate]);
+
   const stats = useMemo(() => {
-    const total = MOCK_EMPLOYEES.length;
-    const pickedUp = MOCK_EMPLOYEES.filter(
-      (e) => e.handoffStatus === HANDOFF_STATUS.PICKED_UP
-    ).length;
-    const pending = MOCK_EMPLOYEES.filter(
-      (e) => e.handoffStatus === HANDOFF_STATUS.PENDING
-    ).length;
-    const noShow = MOCK_EMPLOYEES.filter(
-      (e) => e.handoffStatus === HANDOFF_STATUS.NO_SHOW
-    ).length;
+    const total = employees.length;
+    const pickedUp = employees.filter((e) => e.handoffStatus === HANDOFF_STATUS.PICKED_UP).length;
+    const pending = employees.filter((e) => e.handoffStatus === HANDOFF_STATUS.PENDING).length;
+    const noShow = employees.filter((e) => e.handoffStatus === HANDOFF_STATUS.NO_SHOW).length;
     return { total, pickedUp, pending, noShow };
-  }, []);
+  }, [employees]);
 
   const filteredEmployees = useMemo(() => {
-    if (!searchQuery) return MOCK_EMPLOYEES;
+    if (!searchQuery) return employees;
     const query = searchQuery.toLowerCase();
-    return MOCK_EMPLOYEES.filter(
+    return employees.filter(
       (e) =>
-        e.name.toLowerCase().includes(query) ||
-        e.employeeId.toLowerCase().includes(query) ||
-        e.pickupPoint.toLowerCase().includes(query)
+        (e.name ?? '').toLowerCase().includes(query) ||
+        (e.employeeId ?? e.id ?? '').toLowerCase().includes(query) ||
+        (e.pickupPoint ?? '').toLowerCase().includes(query)
     );
-  }, [searchQuery]);
+  }, [searchQuery, employees]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1500);
-  }, []);
+    Promise.all([
+      dispatch(fetchTrips({ type: 'upcoming', status: 'Upcoming' })),
+      dispatch(fetchHandoffList({ date: selectedDate })),
+    ]).finally(() => setRefreshing(false));
+  }, [dispatch, selectedDate]);
+
+  const todayLabel = new Date(selectedDate).toLocaleDateString('en-GB');
 
   const handleTripPress = useCallback(
     (trip) => {
@@ -227,7 +155,7 @@ const HandoffListScreen = ({ navigation }) => {
               },
             ]}
           >
-            Employee Handoff - {MOCK_HANDOFF_DATE}
+            Employee Handoff - {todayLabel}
           </Text>
         </View>
         <TouchableOpacity
@@ -302,7 +230,7 @@ const HandoffListScreen = ({ navigation }) => {
               },
             ]}
           >
-            Trips ({MOCK_TRIPS.length})
+            Trips ({upcomingTrips.length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -339,7 +267,7 @@ const HandoffListScreen = ({ navigation }) => {
               },
             ]}
           >
-            Employees ({MOCK_EMPLOYEES.length})
+            Employees ({employees.length})
           </Text>
         </TouchableOpacity>
       </View>
@@ -372,7 +300,7 @@ const HandoffListScreen = ({ navigation }) => {
     >
       <Header
         title="Employee Handoff"
-        subtitle={MOCK_HANDOFF_DATE}
+        subtitle={todayLabel}
         rightIcon={
           <Ionicons
             name="filter-outline"
@@ -384,7 +312,7 @@ const HandoffListScreen = ({ navigation }) => {
       />
 
       <FlatList
-        data={activeTab === 'trips' ? MOCK_TRIPS : filteredEmployees}
+        data={activeTab === 'trips' ? upcomingTrips : filteredEmployees}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={renderHeader}
         renderItem={({ item }) =>

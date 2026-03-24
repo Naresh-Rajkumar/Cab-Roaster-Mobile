@@ -11,10 +11,13 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
+import { submitRequest } from '../../redux/slices/appSlice';
 
 const CANCEL_REASONS = [
   { id: 'wfh', label: 'Working from home', icon: 'home-outline' },
@@ -27,16 +30,29 @@ const CANCEL_REASONS = [
 const CancelRequestScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
   const trip = route?.params?.trip;
+  const isSubmitting = useSelector((state) => state.app.isSubmitting);
 
   const [selectedReason, setSelectedReason] = useState('');
   const [otherReason, setOtherReason] = useState('');
 
   const canSubmit =
-    selectedReason && (selectedReason !== 'other' || otherReason.trim().length > 0);
+    !isSubmitting &&
+    selectedReason &&
+    (selectedReason !== 'other' || otherReason.trim().length > 0);
 
   const handleSubmit = () => {
-    navigation.popToTop();
+    const reason = selectedReason === 'other' ? otherReason.trim() : selectedReason;
+    dispatch(submitRequest({
+      requestType: 'Cancellation',
+      tripId: trip?.id,
+      reason,
+    })).unwrap().then(() => {
+      navigation.popToTop();
+    }).catch((err) => {
+      Alert.alert('Error', err || 'Failed to submit cancellation');
+    });
   };
 
   return (

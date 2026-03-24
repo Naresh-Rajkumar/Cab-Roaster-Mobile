@@ -5,8 +5,10 @@ import { useSelector } from 'react-redux';
 import AuthNavigator from './AuthNavigator';
 import AppNavigator from './AppNavigator';
 import DriverNavigator from './DriverNavigator';
+import RequestCabStep1Screen from '../screens/Requests/RequestCabStep1Screen';
+import RequestCabStep2Screen from '../screens/Requests/RequestCabStep2Screen';
 import { useTheme } from '../theme/ThemeProvider';
-import { USER_ROLES } from '../constants';
+import { USER_ROLES, SCREENS } from '../constants';
 
 const Stack = createStackNavigator();
 
@@ -24,7 +26,7 @@ const NAV_FONTS = {
 };
 
 const RootNavigator = () => {
-  const { isAuthenticated, role } = useSelector((state) => state.auth);
+  const { isAuthenticated, role, needsOnboarding } = useSelector((state) => state.auth);
   const { theme } = useTheme();
   const colors = theme.colors;
 
@@ -47,6 +49,11 @@ const RootNavigator = () => {
         {isAuthenticated ? (
           role === USER_ROLES.DRIVER ? (
             <Stack.Screen name="DriverApp" component={DriverNavigator} />
+          ) : needsOnboarding ? (
+            <>
+              <Stack.Screen name={SCREENS.REQUEST_CAB_STEP1} component={RequestCabStep1Screen} />
+              <Stack.Screen name={SCREENS.REQUEST_CAB_STEP2} component={RequestCabStep2Screen} />
+            </>
           ) : (
             <Stack.Screen name="EmployeeApp" component={AppNavigator} />
           )

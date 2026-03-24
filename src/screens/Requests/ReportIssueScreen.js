@@ -12,10 +12,13 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
+import { submitRequest } from '../../redux/slices/appSlice';
 
 const ISSUE_CATEGORIES = [
   { id: 'driver', label: 'Driver Behaviour', icon: 'person-outline', color: '#6d28d9', bg: '#ede9fe' },
@@ -29,13 +32,15 @@ const ISSUE_CATEGORIES = [
 const ReportIssueScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
   const trip = route?.params?.trip;
+  const isSubmitting = useSelector((state) => state.app.isSubmitting);
 
   const [selectedCategory, setSelectedCategory] = useState('');
   const [description, setDescription] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
-  const canSubmit = selectedCategory && description.trim().length >= 10;
+  const canSubmit = !isSubmitting && selectedCategory && description.trim().length >= 10;
 
   if (submitted) {
     return (
@@ -153,7 +158,18 @@ const ReportIssueScreen = ({ navigation, route }) => {
             styles.submitBtn,
             { backgroundColor: canSubmit ? colors.primary : colors.borderLight },
           ]}
-          onPress={() => setSubmitted(true)}
+          onPress={() => {
+            dispatch(submitRequest({
+              requestType: 'Issue',
+              category: selectedCategory,
+              reason: description.trim(),
+              tripId: trip?.id,
+            })).unwrap().then(() => {
+              setSubmitted(true);
+            }).catch((err) => {
+              Alert.alert('Error', err || 'Failed to submit report');
+            });
+          }}
           disabled={!canSubmit}
           activeOpacity={0.85}
         >

@@ -1,61 +1,132 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
-import { setUser } from '../../redux/slices/authSlice';
+import { configService } from '../../services/api/configService';
+import { profileService } from '../../services/api/profileService';
+import { completeOnboarding } from '../../redux/slices/authSlice';
 import spacing from '../../theme/spacing.json';
 import typography from '../../theme/typography.json';
 
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
-const RequestCabStep2Screen = ({ navigation }) => {
+const unwrap = (res) => {
+  const body = res?.data;
+  if (body?.data) return body.data;
+  if (Array.isArray(body)) return body;
+  return body ?? [];
+};
+
+const RequestCabStep2Screen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
   const dispatch = useDispatch();
+  const user = useSelector((state) => state.auth.user);
 
-  const [shiftTiming] = useState('10:00AM - 7:00PM');
-  const [selectedDays, setSelectedDays] = useState(['Mon', 'Wed', 'Thu', 'Fri']);
-  const [submitted, setSubmitted] = useState(false);
+  // Data from Step 1
+  const step1Data = route?.params || {};
+
+  // API data
+  const [shifts, setShifts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Form state
+  const [selectedShift, setSelectedShift] = useState(null);
+  const [showShiftDropdown, setShowShiftDropdown] = useState(false);
+  const [selectedDays, setSelectedDays] = useState(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
+
+  // Greeting
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+  const userName = user?.name?.split(' ')[0] || user?.firstName || 'User';
+  const initials = (user?.name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
   const selectAll = selectedDays.length === ALL_DAYS.length;
 
+  useEffect(() => {
+    const loadShifts = async () => {
+      try {
+        const res = await configService.getShifts();
+        const data = unwrap(res);
+        const arr = Array.isArray(data) ? data : [];
+        setShifts(arr);
+        if (arr.length > 0) setSelectedShift(arr[0]);
+      } catch (err) {
+        console.warn('Failed to load shifts:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadShifts();
+  }, []);
+
   const handleSelectAll = () => {
-    if (selectAll) {
-      setSelectedDays([]);
-    } else {
-      setSelectedDays([...ALL_DAYS]);
-    }
+    setSelectedDays(selectAll ? [] : [...ALL_DAYS]);
   };
 
   const handleDayToggle = (day) => {
-    if (selectedDays.includes(day)) {
-      setSelectedDays(selectedDays.filter((d) => d !== day));
-    } else {
-      setSelectedDays([...selectedDays, day]);
-    }
+    setSelectedDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    );
   };
 
-  const handleSendRequest = () => {
-    setSubmitted(true);
-    dispatch(setUser({ name: 'Ragha Malliga', role: 'employee', employeeId: 'VT216' }));
+  const handleSendRequest = async () => {
+    setSubmitting(true);
+    try {
+      const payload = {
+        homeAddress: step1Data.homeLocation,
+        cabUsagePreference: step1Data.cabPreference || 'both',
+        workingDays: selectedDays,
+      };
+
+      // If shift is selected, include shiftId
+      if (selectedShift?.id) {
+        payload.shiftId = selectedShift.id;
+      }
+
+      await profileService.updateProfile(payload);
+      dispatch(completeOnboarding());
+    } catch (err) {
+      console.warn('Profile update failed:', err.message);
+      // Complete onboarding anyway — user can update profile later
+      dispatch(completeOnboarding());
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleBack = () => {
     navigation.goBack();
   };
 
-  // Split days into rows: first row 3 items, second row 2 items
+  const shiftLabel = selectedShift
+    ? `${selectedShift.startTime || selectedShift.start_time || ''} - ${selectedShift.endTime || selectedShift.end_time || ''}`
+    : 'Select shift timing';
+
+  // Split days into rows: first row 3, second row 2
   const row1 = ALL_DAYS.slice(0, 3);
   const row2 = ALL_DAYS.slice(3);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView
@@ -68,147 +139,82 @@ const RequestCabStep2Screen = ({ navigation }) => {
       >
         {/* Header */}
         <View style={styles.headerRow}>
-          <View
-            style={[styles.avatarCircle, { backgroundColor: colors.primary }]}
-          >
-            <Text style={styles.avatarText}>R</Text>
+          <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
+            <Text style={styles.avatarText}>{initials}</Text>
           </View>
           <View style={styles.greetingContainer}>
-            <Text
-              style={[
-                styles.greetingText,
-                {
-                  color: colors.textSecondary,
-                  fontFamily: typography.fontFamily.regular,
-                },
-              ]}
-            >
-              Good Morning,
+            <Text style={[styles.greetingText, { color: colors.textSecondary }]}>
+              {greeting},
             </Text>
-            <Text
-              style={[
-                styles.greetingName,
-                {
-                  color: colors.text,
-                  fontFamily: typography.fontFamily.semiBold,
-                },
-              ]}
-            >
-              Ragha!
+            <Text style={[styles.greetingName, { color: colors.text }]}>
+              {userName}!
             </Text>
           </View>
         </View>
 
         {/* Title + Step Indicator */}
         <View style={styles.titleRow}>
-          <Text
-            style={[
-              styles.titleText,
-              {
-                color: colors.text,
-                fontFamily: typography.fontFamily.bold,
-              },
-            ]}
-          >
+          <Text style={[styles.titleText, { color: colors.text }]}>
             Ride Scheduling Setup
           </Text>
-          <Text
-            style={[
-              styles.stepIndicator,
-              {
-                color: colors.textSecondary,
-                fontFamily: typography.fontFamily.medium,
-              },
-            ]}
-          >
+          <Text style={[styles.stepIndicator, { color: colors.textSecondary }]}>
             2 of 2
           </Text>
         </View>
 
         {/* Progress Bar */}
-        <View
-          style={[styles.progressBarTrack, { backgroundColor: colors.border }]}
-        >
-          <View
-            style={[
-              styles.progressBarFill,
-              { backgroundColor: colors.primary, width: '50%' },
-            ]}
-          />
+        <View style={[styles.progressBarTrack, { backgroundColor: colors.border }]}>
+          <View style={[styles.progressBarFill, { backgroundColor: colors.primary, width: '50%' }]} />
         </View>
 
         {/* Shift Timing Section */}
         <View style={styles.sectionContainer}>
-          <Text
-            style={[
-              styles.sectionLabel,
-              {
-                color: colors.text,
-                fontFamily: typography.fontFamily.semiBold,
-              },
-            ]}
-          >
-            Shift Timing{' '}
-            <Text style={{ color: colors.primary }}>*</Text>
+          <Text style={[styles.sectionLabel, { color: colors.text }]}>
+            Shift Timing <Text style={{ color: colors.primary }}>*</Text>
           </Text>
           <TouchableOpacity
-            style={[
-              styles.dropdownButton,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
+            style={[styles.dropdownButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => setShowShiftDropdown(!showShiftDropdown)}
             activeOpacity={0.7}
           >
-            <Text
-              style={[
-                styles.dropdownValue,
-                {
-                  color: colors.text,
-                  fontFamily: typography.fontFamily.medium,
-                },
-              ]}
-            >
-              {shiftTiming}
+            <Text style={[styles.dropdownValue, { color: selectedShift ? colors.text : colors.textTertiary || '#9CA3AF' }]}>
+              {shiftLabel}
             </Text>
-            <Ionicons
-              name="chevron-down"
-              size={spacing.iconSize.md}
-              color={colors.textSecondary}
-            />
+            <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
+          {showShiftDropdown && (
+            <View style={[styles.dropdownList, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}>
+              {shifts.map((shift) => (
+                <TouchableOpacity
+                  key={shift.id}
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setSelectedShift(shift);
+                    setShowShiftDropdown(false);
+                  }}
+                >
+                  <Text style={[styles.dropdownItemText, { color: colors.text }]}>
+                    {shift.startTime || shift.start_time || ''} - {shift.endTime || shift.end_time || ''}
+                    {shift.name ? ` (${shift.name})` : ''}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Working Days Section */}
         <View style={styles.sectionContainer}>
           <View style={styles.workingDaysHeader}>
-            <Text
-              style={[
-                styles.sectionLabel,
-                {
-                  color: colors.text,
-                  fontFamily: typography.fontFamily.semiBold,
-                },
-              ]}
-            >
-              Working Days{' '}
-              <Text style={{ color: colors.primary }}>*</Text>
+            <Text style={[styles.sectionLabel, { color: colors.text }]}>
+              Working Days <Text style={{ color: colors.primary }}>*</Text>
             </Text>
             <TouchableOpacity
               style={styles.selectAllRow}
               onPress={handleSelectAll}
               activeOpacity={0.7}
             >
-              <Text
-                style={[
-                  styles.selectAllText,
-                  {
-                    color: colors.textSecondary,
-                    fontFamily: typography.fontFamily.medium,
-                  },
-                ]}
-              >
+              <Text style={[styles.selectAllText, { color: colors.textSecondary }]}>
                 Select All
               </Text>
               <View
@@ -220,13 +226,7 @@ const RequestCabStep2Screen = ({ navigation }) => {
                   },
                 ]}
               >
-                {selectAll && (
-                  <Ionicons
-                    name="checkmark"
-                    size={12}
-                    color="#FFFFFF"
-                  />
-                )}
+                {selectAll && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
               </View>
             </TouchableOpacity>
           </View>
@@ -249,23 +249,10 @@ const RequestCabStep2Screen = ({ navigation }) => {
                   ]}
                 >
                   {isSelected && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={spacing.iconSize.sm}
-                      color={colors.primary}
-                      style={styles.dayCheckmark}
-                    />
+                    <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={styles.dayCheckmark} />
                   )}
                   <Text
-                    style={[
-                      styles.dayLabel,
-                      {
-                        color: isSelected ? colors.primary : colors.text,
-                        fontFamily: isSelected
-                          ? typography.fontFamily.semiBold
-                          : typography.fontFamily.medium,
-                      },
-                    ]}
+                    style={[styles.dayLabel, { color: isSelected ? colors.primary : colors.text, fontWeight: isSelected ? '600' : '500' }]}
                   >
                     {day}
                   </Text>
@@ -292,23 +279,10 @@ const RequestCabStep2Screen = ({ navigation }) => {
                   ]}
                 >
                   {isSelected && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={spacing.iconSize.sm}
-                      color={colors.primary}
-                      style={styles.dayCheckmark}
-                    />
+                    <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={styles.dayCheckmark} />
                   )}
                   <Text
-                    style={[
-                      styles.dayLabel,
-                      {
-                        color: isSelected ? colors.primary : colors.text,
-                        fontFamily: isSelected
-                          ? typography.fontFamily.semiBold
-                          : typography.fontFamily.medium,
-                      },
-                    ]}
+                    style={[styles.dayLabel, { color: isSelected ? colors.primary : colors.text, fontWeight: isSelected ? '600' : '500' }]}
                   >
                     {day}
                   </Text>
@@ -320,46 +294,23 @@ const RequestCabStep2Screen = ({ navigation }) => {
       </ScrollView>
 
       {/* Bottom Buttons — sticky footer */}
-      <View
-        style={[
-          styles.bottomButtons,
-          { borderTopColor: colors.border, backgroundColor: colors.background },
-        ]}
-      >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={handleBack}
-          activeOpacity={0.7}
-        >
-          <Text
-            style={[
-              styles.backButtonText,
-              {
-                color: colors.text,
-                fontFamily: typography.fontFamily.semiBold,
-              },
-            ]}
-          >
-            ← Back
-          </Text>
+      <View style={[styles.bottomButtons, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack} activeOpacity={0.7}>
+          <Ionicons name="arrow-back" size={18} color={colors.text} style={{ marginRight: 4 }} />
+          <Text style={[styles.backButtonText, { color: colors.text }]}>Back</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[
-            styles.sendButton,
-            { backgroundColor: colors.primary },
-          ]}
+          style={[styles.sendButton, { backgroundColor: colors.primary, opacity: submitting ? 0.7 : 1 }]}
           onPress={handleSendRequest}
           activeOpacity={0.8}
+          disabled={submitting}
         >
-          <Text
-            style={[
-              styles.sendButtonText,
-              { fontFamily: typography.fontFamily.semiBold },
-            ]}
-          >
-            Send Request →
-          </Text>
+          {submitting ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.sendButtonText}>Send Request  →</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -367,171 +318,57 @@ const RequestCabStep2Screen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.base,
-    paddingBottom: spacing.xl,
-  },
-
-  // Header
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  avatarCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.sm,
-  },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.base,
-    fontFamily: 'Inter-Bold',
-  },
-  greetingContainer: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 4,
-  },
-  greetingText: {
-    fontSize: typography.fontSize.md,
-  },
-  greetingName: {
-    fontSize: typography.fontSize.md,
-  },
-
-  // Title + Step
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  titleText: {
-    fontSize: typography.fontSize.xl,
-  },
-  stepIndicator: {
-    fontSize: typography.fontSize.sm,
-  },
-
-  // Progress bar
-  progressBarTrack: {
-    height: 8,
-    borderRadius: spacing.borderRadius.full,
-    marginBottom: spacing.xl,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: spacing.borderRadius.full,
-  },
-
-  // Section
-  sectionContainer: {
-    marginBottom: spacing.lg,
-  },
-  sectionLabel: {
-    fontSize: typography.fontSize.md,
-    marginBottom: spacing.sm,
-  },
-
-  // Dropdown
+  container: { flex: 1 },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scrollContent: { padding: spacing.base, paddingBottom: spacing.xl },
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg },
+  avatarCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm },
+  avatarText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  greetingContainer: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  greetingText: { fontSize: 15 },
+  greetingName: { fontSize: 15, fontWeight: '600' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  titleText: { fontSize: 20, fontWeight: '700' },
+  stepIndicator: { fontSize: 13 },
+  progressBarTrack: { height: 8, borderRadius: 99, marginBottom: spacing.xl, overflow: 'hidden' },
+  progressBarFill: { height: '100%', borderRadius: 99 },
+  sectionContainer: { marginBottom: spacing.lg },
+  sectionLabel: { fontSize: 15, fontWeight: '600', marginBottom: spacing.sm },
   dropdownButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1.5,
-    borderRadius: spacing.borderRadius.md,
+    borderRadius: 8,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
   },
-  dropdownValue: {
-    fontSize: typography.fontSize.md,
-  },
-
-  // Working Days
-  workingDaysHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  selectAllRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  selectAllText: {
-    fontSize: typography.fontSize.sm,
-  },
-  checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: spacing.borderRadius.xs,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // Day cards
-  daysRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
+  dropdownValue: { fontSize: 15 },
+  dropdownList: { borderWidth: 1, borderRadius: 8, marginTop: 4, overflow: 'hidden' },
+  dropdownItem: { paddingVertical: 12, paddingHorizontal: spacing.base, borderBottomWidth: 0.5, borderBottomColor: '#F3F4F6' },
+  dropdownItemText: { fontSize: 14 },
+  workingDaysHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  selectAllRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  selectAllText: { fontSize: 13 },
+  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  daysRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   dayCard: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: spacing.md,
-    borderRadius: spacing.borderRadius.md,
+    borderRadius: 8,
     borderWidth: 1.5,
     position: 'relative',
     minHeight: 52,
   },
-  dayCheckmark: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-  },
-  dayLabel: {
-    fontSize: typography.fontSize.sm,
-  },
-
-  // Bottom buttons
-  bottomButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-  },
-  backButton: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.base,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backButtonText: {
-    fontSize: typography.fontSize.md,
-  },
-  sendButton: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: spacing.borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendButtonText: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.md,
-  },
+  dayCheckmark: { position: 'absolute', top: 4, right: 4 },
+  dayLabel: { fontSize: 13 },
+  bottomButtons: { flexDirection: 'row', gap: 12, paddingHorizontal: spacing.base, paddingVertical: spacing.md, borderTopWidth: 1 },
+  backButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.base },
+  backButtonText: { fontSize: 15, fontWeight: '600' },
+  sendButton: { flex: 1, paddingVertical: spacing.md, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  sendButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
 });
 
 export default RequestCabStep2Screen;

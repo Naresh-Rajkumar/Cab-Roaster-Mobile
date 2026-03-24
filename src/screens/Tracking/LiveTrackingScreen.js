@@ -2,7 +2,7 @@
  * Live Tracking Screen — Figma: Employee Handoff 09/02/2026 "Track Location"
  * Two states: map + minimal panel, and expanded ride-detail sheet.
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,31 +12,24 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Avatar } from '../../components';
 import { SCREENS } from '../../constants';
-import { MOCK_ROUTE_STOPS } from '../../services/mock/mockData';
+import { fetchCurrentRide, fetchTripStops } from '../../redux/slices/tripSlice';
+import { useTrackingSocket } from '../../hooks/useTrackingSocket';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
-const MOCK_RIDE = {
-  tripNumber: 'Trip #482',
-  vehicleNo: 'TN 14 CV 3755',
-  vehicleType: 'Ertiga',
-  status: 'active',
-  driverName: 'Rogelio Adams',
-  nextStop: 'Sholinganallur',
-  eta: '15 mins',
-  currentLocation: 'Chennai One IT SEZ',
-  currentAddress: '200 Feet Radial Road, MCN Nagar Extension, Pallavaram, Thoraipakkam, Tamilnadu',
-};
-
-const ROUTE_STOPS = [
-  { id: 's1', time: '9:30 AM', name: 'Madipakkam',    status: 'picked_up',    statusLabel: 'Picked Up',     statusColor: '#16a34a' },
-  { id: 's2', time: '9:45 AM', name: 'BSR Mall',       status: 'arriving',     statusLabel: 'Arriving Soon', statusColor: '#643ee8' },
-  { id: 's3', time: '10:15 AM', name: 'Aavin Bus Stop', status: 'pending',     statusLabel: 'Pending',       statusColor: '#9ca3af' },
-  { id: 's4', time: '10:30 AM', name: 'vThink Office',  status: 'pending',     statusLabel: 'Pending',       statusColor: '#9ca3af' },
-];
+// Map stop status to display values
+function stopDisplay(status) {
+  switch (status) {
+    case 'completed': return { label: 'Picked Up', color: '#16a34a' };
+    case 'in_progress':
+    case 'arriving': return { label: 'Arriving Soon', color: '#643ee8' };
+    default: return { label: 'Pending', color: '#9ca3af' };
+  }
+}
 
 // ─── Fake Map Render ──────────────────────────────────────────────────────────
 const FakeMap = ({ colors }) => (
@@ -79,7 +72,72 @@ const FakeMap = ({ colors }) => (
 const LiveTrackingScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
   const [showDetails, setShowDetails] = useState(false);
+
+  const currentRide = useSelector((state) => state.trip.currentRide);
+  const tripStops = useSelector((state) => state.trip.tripStops);
+  const { socket, connected, getActiveCabs } = useTrackingSocket();
+  const [liveCabLocation, setLiveCabLocation] = useState(null);
+
+  useEffect(() => {
+    dispatch(fetchCurrentRide());
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (currentRide?.id) {
+      dispatch(fetchTripStops(currentRide.id));
+    }
+  }, [currentRide?.id, dispatch]);
+
+  // Listen for real-time cab location updates via socket
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleLocationUpdate = (data) => {
+      // data: { cabId, latitude, longitude, speed, heading, timestamp }
+      setLiveCabLocation(data);
+    };
+
+    socket.on('cab_location_update', handleLocationUpdate);
+
+    // Request initial active cabs
+    if (connected) {
+      getActiveCabs();
+    }
+
+    return () => {
+      socket.off('cab_location_update', handleLocationUpdate);
+    };
+  }, [socket, connected, getActiveCabs]);
+
+  // Derive display data from Redux (fall back to empty strings)
+  const ride = {
+    tripNumber: currentRide?.tripNumber ?? '',
+    vehicleNo: currentRide?.vehicleNo ?? '',
+    vehicleType: currentRide?.vehicleType ?? '',
+    driverName: currentRide?.driverName ?? '',
+    nextStop: currentRide?.dropoff ?? '',
+    eta: currentRide?.eta ?? '',
+    currentLocation: '',
+    currentAddress: '',
+  };
+
+  // Build ROUTE_STOPS from Redux tripStops
+  const routeStops = tripStops.map((stop) => {
+    const display = stopDisplay(stop.status);
+    return {
+      id: stop.id,
+      time: stop.time ?? '',
+      name: stop.name ?? '',
+      status: stop.status,
+      statusLabel: display.label,
+      statusColor: display.color,
+    };
+  });
+
+  // Find the "current" stop (first non-completed)
+  const currentStopIndex = routeStops.findIndex((s) => s.status !== 'completed');
 
   return (
     <View style={styles.container}>
@@ -114,11 +172,11 @@ const LiveTrackingScreen = ({ navigation, route }) => {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.nextStopLabel, { color: colors.textSecondary }]}>Next Stop</Text>
-              <Text style={[styles.nextStopName, { color: colors.text }]}>{MOCK_RIDE.nextStop}</Text>
+              <Text style={[styles.nextStopName, { color: colors.text }]}>{ride.nextStop}</Text>
             </View>
             <View style={[styles.etaBadge, { backgroundColor: colors.primaryContainer }]}>
               <View style={[styles.etaDot, { backgroundColor: colors.primary }]} />
-              <Text style={[styles.etaText, { color: colors.primary }]}>{MOCK_RIDE.eta}</Text>
+              <Text style={[styles.etaText, { color: colors.primary }]}>{ride.eta}</Text>
             </View>
           </TouchableOpacity>
 
@@ -126,13 +184,13 @@ const LiveTrackingScreen = ({ navigation, route }) => {
 
           {/* Driver row */}
           <View style={styles.driverRow}>
-            <Avatar name={MOCK_RIDE.driverName} size={44} />
+            <Avatar name={ride.driverName} size={44} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.driverName, { color: colors.text }]}>{MOCK_RIDE.driverName}</Text>
+              <Text style={[styles.driverName, { color: colors.text }]}>{ride.driverName}</Text>
               <Text style={[styles.vehicleText, { color: colors.textSecondary }]}>
-                {MOCK_RIDE.vehicleNo}{' '}
+                {ride.vehicleNo}{' '}
                 <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
-                {MOCK_RIDE.vehicleType}
+                {ride.vehicleType}
               </Text>
             </View>
             <TouchableOpacity style={[styles.callBtn, { borderColor: colors.borderLight }]}>
@@ -155,11 +213,11 @@ const LiveTrackingScreen = ({ navigation, route }) => {
           {/* Trip meta */}
           <View style={styles.tripMeta}>
             <View>
-              <Text style={[styles.tripNumber, { color: colors.text }]}>{MOCK_RIDE.tripNumber}</Text>
+              <Text style={[styles.tripNumber, { color: colors.text }]}>{ride.tripNumber}</Text>
               <Text style={[styles.vehicleText, { color: colors.textSecondary }]}>
-                {MOCK_RIDE.vehicleNo}{' '}
+                {ride.vehicleNo}{' '}
                 <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
-                {MOCK_RIDE.vehicleType}
+                {ride.vehicleType}
               </Text>
             </View>
             <View style={[styles.activeBadge, { backgroundColor: '#dcfce7' }]}>
@@ -171,7 +229,7 @@ const LiveTrackingScreen = ({ navigation, route }) => {
           <Text style={[styles.routeStopsTitle, { color: colors.text }]}>Route Stops</Text>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            {ROUTE_STOPS.map((stop, idx) => (
+            {routeStops.map((stop, idx) => (
               <View key={stop.id}>
                 <View style={styles.stopRow}>
                   <View style={styles.stopTimelineCol}>
@@ -182,11 +240,11 @@ const LiveTrackingScreen = ({ navigation, route }) => {
                         backgroundColor: stop.status === 'pending' ? 'transparent' : stop.statusColor + '20',
                       },
                     ]}>
-                      {(stop.status === 'picked_up' || stop.status === 'arriving') && (
+                      {(stop.status === 'completed' || stop.status === 'arriving' || stop.status === 'in_progress') && (
                         <View style={[styles.stopCircleInner, { backgroundColor: stop.statusColor }]} />
                       )}
                     </View>
-                    {idx < ROUTE_STOPS.length - 1 && (
+                    {idx < routeStops.length - 1 && (
                       <View style={[styles.stopLine, { borderColor: colors.border }]} />
                     )}
                   </View>
@@ -197,15 +255,9 @@ const LiveTrackingScreen = ({ navigation, route }) => {
                     </View>
                     <Text style={[styles.stopName, { color: colors.text }]}>{stop.name}</Text>
 
-                    {/* Current location card (after BSR Mall) */}
-                    {stop.id === 's2' && (
+                    {/* Current location card (shown at current/next stop) */}
+                    {idx === currentStopIndex && (
                       <View style={[styles.currentLocCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                        <View style={styles.currentLocRow}>
-                          <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
-                          <Text style={[styles.currentLocLabel, { color: colors.textSecondary }]}>Current Location</Text>
-                        </View>
-                        <Text style={[styles.currentLocName, { color: colors.text }]}>{MOCK_RIDE.currentLocation}</Text>
-                        <Text style={[styles.currentLocAddress, { color: colors.textSecondary }]}>{MOCK_RIDE.currentAddress}</Text>
                         <TouchableOpacity
                           style={[styles.trackBtn, { backgroundColor: colors.primary }]}
                           onPress={() => navigation.navigate(SCREENS.CAB_ARRIVED)}
@@ -224,13 +276,13 @@ const LiveTrackingScreen = ({ navigation, route }) => {
             {/* Driver footer */}
             <View style={[styles.divider, { backgroundColor: colors.borderLight, marginVertical: 12 }]} />
             <View style={styles.driverRow}>
-              <Avatar name={MOCK_RIDE.driverName} size={44} />
+              <Avatar name={ride.driverName} size={44} />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.driverName, { color: colors.text }]}>{MOCK_RIDE.driverName}</Text>
+                <Text style={[styles.driverName, { color: colors.text }]}>{ride.driverName}</Text>
                 <Text style={[styles.vehicleText, { color: colors.textSecondary }]}>
-                  {MOCK_RIDE.vehicleNo}{' '}
+                  {ride.vehicleNo}{' '}
                   <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
-                  {MOCK_RIDE.vehicleType}
+                  {ride.vehicleType}
                 </Text>
               </View>
               <TouchableOpacity style={[styles.callBtn, { borderColor: colors.borderLight }]}>

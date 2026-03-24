@@ -1,9 +1,6 @@
 import axios from 'axios';
 import { API_TIMEOUT } from '../constants';
-
-const API_BASE_URL = __DEV__
-  ? 'http://localhost:3000/api'
-  : 'https://api.cabroster.com/api';
+import { API_BASE_URL } from '../config/env';
 
 const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -17,8 +14,10 @@ const axiosInstance = axios.create({
 // Request interceptor
 axiosInstance.interceptors.request.use(
   (config) => {
-    // Token will be injected from store
-    // In production, use secure storage (expo-secure-store)
+    const token = axiosInstance.defaults.headers.common['Authorization'];
+    if (token) {
+      config.headers['Authorization'] = token;
+    }
     return config;
   },
   (error) => Promise.reject(error)

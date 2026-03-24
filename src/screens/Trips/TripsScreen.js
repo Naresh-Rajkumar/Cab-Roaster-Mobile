@@ -1,7 +1,7 @@
 /**
  * Employee Trips Screen — Figma: Employee Handoff 09/02/2026 "My Trips"
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,17 +10,16 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Avatar } from '../../components';
 import { SCREENS } from '../../constants';
-import {
-  MOCK_CURRENT_RIDE,
-  MOCK_UPCOMING_TRIPS_EMPLOYEE,
-  MOCK_TRIP_HISTORY_EMPLOYEE,
-} from '../../services/mock/mockData';
+import { fetchTrips, fetchCurrentRide } from '../../redux/slices/tripSlice';
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -221,7 +220,7 @@ const HistoryTripCard = ({ trip, colors }) => (
           <Text style={{ color: colors.textTertiary }}>•</Text>{' '}
           {trip.vehicleType}
         </Text>
-        <Text style={[styles.tripDate, { color: colors.textSecondary }]}>{trip.time}</Text>
+        <Text style={[styles.tripDate, { color: colors.textSecondary }]}>{trip.date}</Text>
       </View>
       <TouchableOpacity>
         <Ionicons name="ellipsis-vertical" size={18} color={colors.textTertiary} />
@@ -234,9 +233,31 @@ const HistoryTripCard = ({ trip, colors }) => (
 const TripsScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const dispatch = useDispatch();
   const [activeTab, setActiveTab] = useState(0);
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const currentRide = useSelector((state) => state.trip.currentRide);
+  const upcomingTrips = useSelector((state) => state.trip.upcomingTrips);
+  const historyTrips = useSelector((state) => state.trip.historyTrips);
+  const isLoading = useSelector((state) => state.trip.isLoading);
+
+  useEffect(() => {
+    dispatch(fetchCurrentRide());
+    dispatch(fetchTrips({ type: 'upcoming', status: 'Upcoming' }));
+    dispatch(fetchTrips({ type: 'history', status: 'Completed' }));
+  }, [dispatch]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    Promise.all([
+      dispatch(fetchCurrentRide()),
+      dispatch(fetchTrips({ type: 'upcoming', status: 'Upcoming' })),
+      dispatch(fetchTrips({ type: 'history', status: 'Completed' })),
+    ]).finally(() => setRefreshing(false));
+  };
 
   const openSheet = (trip) => {
     setSelectedTrip(trip);
@@ -257,9 +278,9 @@ const TripsScreen = ({ navigation }) => {
     navigation.navigate(SCREENS.REPORT_ISSUE, { trip: selectedTrip });
   };
 
-  // Group history by dateLabel
-  const historyGroups = MOCK_TRIP_HISTORY_EMPLOYEE.reduce((acc, trip) => {
-    const key = trip.dateLabel;
+  // Group history by date
+  const historyGroups = historyTrips.reduce((acc, trip) => {
+    const key = trip.date || 'Earlier';
     if (!acc[key]) acc[key] = [];
     acc[key].push(trip);
     return acc;
@@ -306,27 +327,42 @@ const TripsScreen = ({ navigation }) => {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
-        {activeTab === 0 ? (
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
+        }
+      >
+        {isLoading && !refreshing ? (
+          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+        ) : activeTab === 0 ? (
           <>
             {/* Current Ride */}
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Current Ride</Text>
-            <CurrentRideCard
-              ride={MOCK_CURRENT_RIDE}
-              colors={colors}
-              onTrack={() => navigation.navigate(SCREENS.LIVE_TRACKING)}
-            />
+            {currentRide && (
+              <>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Current Ride</Text>
+                <CurrentRideCard
+                  ride={currentRide}
+                  colors={colors}
+                  onTrack={() => navigation.navigate(SCREENS.LIVE_TRACKING)}
+                />
+              </>
+            )}
 
             {/* This Week */}
             <View style={styles.weekHeader}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>This week</Text>
               <Text style={[styles.weekCount, { color: colors.textSecondary }]}>
-                {MOCK_UPCOMING_TRIPS_EMPLOYEE.length} Scheduled Trips
+                {upcomingTrips.length} Scheduled Trips
               </Text>
             </View>
-            {MOCK_UPCOMING_TRIPS_EMPLOYEE.map((trip) => (
+            {upcomingTrips.map((trip) => (
               <UpcomingTripCard key={trip.id} trip={trip} colors={colors} onMenuPress={openSheet} />
             ))}
+            {upcomingTrips.length === 0 && (
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No upcoming trips</Text>
+            )}
           </>
         ) : (
           <>
@@ -345,6 +381,9 @@ const TripsScreen = ({ navigation }) => {
                 ))}
               </View>
             ))}
+            {historyTrips.length === 0 && (
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No trip history</Text>
+            )}
           </>
         )}
         <View style={{ height: 80 }} />
@@ -504,6 +543,7 @@ const styles = StyleSheet.create({
   },
   dateFilterText: { fontSize: 14, fontWeight: '500' },
   dateSectionLabel: { fontSize: 15, fontWeight: '700', marginBottom: 12 },
+  emptyText: { textAlign: 'center', marginTop: 32, fontSize: 14 },
 });
 
 export default TripsScreen;
