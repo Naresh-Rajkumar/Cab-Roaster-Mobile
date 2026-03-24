@@ -14,6 +14,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { configService } from '../../services/api/configService';
 import { profileService } from '../../services/api/profileService';
+import { requestsService } from '../../services/api/requestsService';
 import { completeOnboarding } from '../../redux/slices/authSlice';
 import spacing from '../../theme/spacing.json';
 import typography from '../../theme/typography.json';
@@ -84,7 +85,7 @@ const RequestCabStep2Screen = ({ navigation, route }) => {
   const handleSendRequest = async () => {
     setSubmitting(true);
     try {
-      const payload = {
+      const profilePayload = {
         homeAddress: step1Data.homeLocation,
         cabUsagePreference: step1Data.cabPreference || 'both',
         workingDays: selectedDays,
@@ -92,14 +93,39 @@ const RequestCabStep2Screen = ({ navigation, route }) => {
 
       // If shift is selected, include shiftId
       if (selectedShift?.id) {
-        payload.shiftId = selectedShift.id;
+        profilePayload.shiftId = selectedShift.id;
       }
 
-      await profileService.updateProfile(payload);
+      await profileService.updateProfile(profilePayload);
+
+      // Create a cab request so it appears in admin's pending list
+      const requestPayload = {
+        requestType: 'new_cab',
+        cabUsagePreference: step1Data.cabPreference || 'both',
+        homeLocationAddress: step1Data.homeLocation,
+        workingDays: selectedDays,
+        reason: 'New cab request from onboarding',
+      };
+      // Only include employeeId if available — backend resolves from JWT otherwise
+      if (user?.employeeId) {
+        requestPayload.employeeId = user.employeeId;
+      }
+      if (selectedShift?.id) {
+        requestPayload.shiftId = selectedShift.id;
+      }
+      if (step1Data.pickupStop?.id) {
+        requestPayload.pickupStopId = step1Data.pickupStop.id;
+      }
+      if (step1Data.dropStop?.id) {
+        requestPayload.dropStopId = step1Data.dropStop.id;
+      }
+
+      await requestsService.createRequest(requestPayload);
+
       dispatch(completeOnboarding());
     } catch (err) {
-      console.warn('Profile update failed:', err.message);
-      // Complete onboarding anyway — user can update profile later
+      console.warn('Request submission failed:', err.message);
+      // Complete onboarding anyway — user can retry later
       dispatch(completeOnboarding());
     } finally {
       setSubmitting(false);

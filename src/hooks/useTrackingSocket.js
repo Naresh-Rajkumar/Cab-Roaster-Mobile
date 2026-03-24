@@ -7,9 +7,10 @@
  *   - DriverActiveTripScreen (driver) — emits update_location
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { io } from 'socket.io-client';
 import { API_BASE_URL } from '../config/env';
+import { addNotification } from '../redux/slices/appSlice';
 
 // Derive socket URL from API base URL (strip /api/v1 suffix)
 const SOCKET_URL = API_BASE_URL.replace(/\/api\/v\d+$/, '');
@@ -18,6 +19,7 @@ export function useTrackingSocket() {
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const token = useSelector((state) => state.auth.token);
+  const dispatch = useDispatch();
 
   useEffect(() => {
     if (!token) return;
@@ -47,6 +49,22 @@ export function useTrackingSocket() {
 
     socket.on('error', (err) => {
       console.warn('[Tracking] Server error:', err?.message ?? err);
+    });
+
+    socket.on('notification_received', (data) => {
+      if (data?.title) {
+        dispatch(addNotification({
+          id: String(Date.now()),
+          title: data.title,
+          body: data.body || '',
+          time: 'Just now',
+          unread: true,
+          iconName: 'notifications-outline',
+          iconBg: '#EDE9FE',
+          iconColor: '#7C3AED',
+          category: 'today',
+        }));
+      }
     });
 
     socketRef.current = socket;
