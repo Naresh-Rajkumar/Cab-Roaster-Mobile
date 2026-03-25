@@ -48,7 +48,9 @@ const DriverLoginScreen = ({ navigation }) => {
       Alert.alert('Error', result.payload || 'Failed to send OTP');
       return;
     }
-    if (__DEV__ && result.payload?.devOtp) {
+    // Show OTP in Alert when backend returns devOtp (only in NODE_ENV=development)
+    // Remove __DEV__ guard — some Expo build modes set __DEV__=false even in dev
+    if (result.payload?.devOtp) {
       Alert.alert(
         'Dev OTP',
         `Your OTP is: ${result.payload.devOtp}`,
