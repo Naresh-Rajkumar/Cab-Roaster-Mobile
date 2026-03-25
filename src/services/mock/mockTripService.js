@@ -89,6 +89,12 @@ export const mockTripService = {
     return { data: MOCK_CURRENT_RIDE };
   },
 
+  // Returns a mock in-progress ride (simulates driver having started the trip)
+  getMyCurrentRide: async () => {
+    await delay();
+    return { data: { ...MOCK_CURRENT_RIDE, status: 'in_progress' } };
+  },
+
   getTripSummary: async (tripId) => {
     await delay();
     return { data: MOCK_TRIP_SUMMARY };

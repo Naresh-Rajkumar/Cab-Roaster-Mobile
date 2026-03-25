@@ -50,7 +50,10 @@ function normalizeTripForDriver(trip) {
     eta: formatTime(trip.scheduledEnd ?? trip.endTime ?? trip.estimatedArrival),
   };
 
-  return { id, tripNumber, vehicle, vehicleType, status, pickup, destination };
+  // cabId is needed by useDriverLocation to emit GPS updates to the socket
+  const cabId = trip.cabId ?? trip.cab?.id ?? trip.cabAssignmentId ?? null;
+
+  return { id, tripNumber, vehicle, vehicleType, status, pickup, destination, cabId, vehicleNo: vehicle };
 }
 
 function formatTime(isoOrStr) {
@@ -73,13 +76,15 @@ export const fetchDriverDashboard = createAsyncThunk(
   'driver/fetchDashboard',
   async (_, { rejectWithValue }) => {
     try {
-      const [statsRes, nextTripRes, upcomingRes] = await Promise.all([
+      const [statsRes, activeTripRes, nextTripRes, upcomingRes] = await Promise.all([
         driverService.getDailyStats(),
+        driverService.getActiveTrip().catch(() => null),  // non-fatal: may return empty
         driverService.getNextTrip(),
         driverService.getUpcomingTrips(),
       ]);
 
       const statsRaw = unwrap(statsRes) ?? statsRes?.data ?? {};
+      const activeTripRaw = activeTripRes ? unwrap(activeTripRes) : null;
       const nextTripRaw = unwrap(nextTripRes);
       const upcomingRaw = unwrap(upcomingRes);
 
@@ -92,9 +97,11 @@ export const fetchDriverDashboard = createAsyncThunk(
         totalPickups: completed,
       };
 
-      // nextTrip: paginated list, take first item
+      // Prefer in_progress trip (driver already started) over upcoming
+      const activeTripList = toArray(activeTripRaw);
       const nextTripList = toArray(nextTripRaw);
-      const nextTrip = normalizeTripForDriver(nextTripList[0] ?? null);
+      const rawNextTrip = activeTripList[0] ?? nextTripList[0] ?? null;
+      const nextTrip = normalizeTripForDriver(rawNextTrip);
 
       // upcomingTrips: list
       const upcomingTrips = toArray(upcomingRaw).map(normalizeTripForDriver);

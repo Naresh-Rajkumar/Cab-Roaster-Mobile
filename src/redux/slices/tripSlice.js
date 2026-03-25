@@ -80,13 +80,17 @@ function normalizeTripDetail(trip) {
     scheduledTime: trip.scheduledTime ?? formatTime(trip.scheduledStart),
     driverName: trip.driverName ?? trip.driver ?? '',
     driverContact: trip.driverContact ?? trip.driverPhone ?? '',
-    vehicleNo: trip.vehicleNo ?? trip.vehicle ?? trip.cabNumber ?? '',
-    vehicleType: trip.vehicleType ?? '',
+    vehicleNo: trip.vehicleNo ?? trip.vehicle ?? trip.cabNumber ?? trip.cab?.regNo ?? trip.cab?.registrationNumber ?? '',
+    vehicleType: trip.vehicleType ?? trip.cab?.type ?? '',
     driverPhone: trip.driverPhone ?? trip.driverContact ?? '',
     otp: trip.otp ?? '',
     passengers: trip.passengers ?? [],
     ...trip,
+    // Explicit overrides after spread — these are critical for live tracking
     id: String(trip.id ?? trip._id ?? ''),
+    // cabId is needed by LiveTrackingScreen to match the cab via socket
+    cabId: trip.cabId ?? trip.cab?.id ?? trip.cabAssignmentId ?? null,
+    vehicleNo: trip.vehicleNo ?? trip.vehicle ?? trip.cabNumber ?? trip.cab?.regNo ?? trip.cab?.registrationNumber ?? '',
   };
 }
 
@@ -178,12 +182,28 @@ export const fetchCurrentRide = createAsyncThunk(
   'trip/fetchCurrentRide',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await tripService.getNextTrip();
-      const raw = unwrap(response);
-      // Returns a list (limit=1) — take the first trip
-      const list = toArray(raw);
-      const trip = list[0] ?? raw;
-      return trip ? normalizeTripDetail(trip) : null;
+      // Priority 1: check for an actively running trip (driver has started it)
+      let raw = null;
+      try {
+        const inProgressRes = await tripService.getMyCurrentRide();
+        const inProgressData = unwrap(inProgressRes);
+        const inProgressList = toArray(inProgressData);
+        if (inProgressList.length > 0) {
+          raw = inProgressList[0];
+        }
+      } catch {
+        // endpoint may 404 or return empty — fall through to upcoming
+      }
+
+      // Priority 2: next upcoming trip (scheduled but not yet started)
+      if (!raw) {
+        const upcomingRes = await tripService.getNextTrip();
+        const upcomingData = unwrap(upcomingRes);
+        const upcomingList = toArray(upcomingData);
+        raw = upcomingList[0] ?? upcomingData;
+      }
+
+      return raw ? normalizeTripDetail(raw) : null;
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message || error.message || 'Failed to fetch current ride'

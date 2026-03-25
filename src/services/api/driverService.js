@@ -10,6 +10,7 @@ import axiosInstance from '../axiosConfig';
 const realDriverService = {
   getDailyStats: () => axiosInstance.get('/dashboard/stats'),
   getNextTrip: () => axiosInstance.get('/trips', { params: { status: 'Upcoming', limit: 1 } }),
+  getActiveTrip: () => axiosInstance.get('/trips', { params: { status: 'in_progress', limit: 1 } }),
   getUpcomingTrips: () => axiosInstance.get('/trips', { params: { status: 'Upcoming' } }),
   startTrip: (tripId) => axiosInstance.post(`/trips/${tripId}/start`),
   endTrip: (tripId) => axiosInstance.post(`/trips/${tripId}/complete`),

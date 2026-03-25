@@ -75,4 +75,15 @@ export const mockDriverService = {
     await delay();
     return { data: { success: true, tripId, savedAt: new Date().toISOString() } };
   },
+
+  // Returns the currently active trip if driver already started one
+  getActiveTrip: async () => {
+    await delay();
+    return { data: [] }; // mock: no active trip by default
+  },
+
+  arriveAtStop: async (tripId, stopId) => {
+    await delay();
+    return { data: { tripId, stopId, arrivedAt: new Date().toISOString() } };
+  },
 };

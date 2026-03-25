@@ -21,6 +21,8 @@ const realTripService = {
   completeTrip: (tripId) => axiosInstance.post(`/trips/${tripId}/complete`),
   arriveAtStop: (tripId, stopId) => axiosInstance.post(`/trips/${tripId}/stops/${stopId}/arrive`),
   getNextTrip: () => axiosInstance.get('/trips', { params: { status: 'Upcoming', limit: 1 } }),
+  // Returns the employee's currently active trip (driver has started it)
+  getMyCurrentRide: () => axiosInstance.get('/trips', { params: { status: 'in_progress', limit: 1 } }),
 };
 
 export const tripService = USE_MOCK ? mockTripService : realTripService;
