@@ -100,6 +100,8 @@ function normalizeStop(stop) {
     name: stop.stopName ?? stop.name ?? stop.stop?.stopName ?? '',
     status: stop.status ?? 'pending',
     isDestination: stop.isDestination ?? stop.type === 'destination' ?? false,
+    latitude: stop.latitude ?? stop.lat ?? stop.stop?.latitude ?? null,
+    longitude: stop.longitude ?? stop.lng ?? stop.lon ?? stop.stop?.longitude ?? null,
     employees: toArray(stop.employees ?? stop.passengers).map(normalizeEmployee),
   };
 }

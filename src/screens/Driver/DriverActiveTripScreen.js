@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import { useTheme } from '../../theme/ThemeProvider';
 import { StatusBadge, Avatar } from '../../components';
 import { SCREENS, TRIP_STATUS } from '../../constants';
@@ -21,8 +22,10 @@ import { startTrip, endTrip } from '../../redux/slices/driverSlice';
 import { useTrackingSocket } from '../../hooks/useTrackingSocket';
 import { useDriverLocation } from '../../hooks/useDriverLocation';
 
-const { width } = Dimensions.get('window');
+const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const MAP_HEIGHT = Math.round(SCREEN_HEIGHT * 0.42);
 const SLIDE_TRACK_WIDTH = width - 64;
+const DEFAULT_REGION = { latitude: 12.9716, longitude: 80.2209, latitudeDelta: 0.05, longitudeDelta: 0.05 };
 const THUMB_SIZE = 52;
 
 // ─── Slide-to-start component ──────────────────────────────────────────────────
@@ -224,11 +227,65 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Trip Details</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Active Trip</Text>
           <Text style={[styles.headerSub, { color: colors.textSecondary }]}>{tripDetails.tripNumber}</Text>
         </View>
-        <TouchableOpacity style={styles.sosBtn} activeOpacity={0.8}>
-          <Text style={styles.sosText}>SOS</Text>
+        <View style={{ width: 50 }} />
+      </View>
+
+      {/* ── Live Map ── */}
+      <View style={styles.mapContainer}>
+        <MapView
+          style={styles.map}
+          region={
+            location
+              ? {
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                  latitudeDelta: 0.02,
+                  longitudeDelta: 0.02,
+                }
+              : DEFAULT_REGION
+          }
+          showsUserLocation={false}
+          showsMyLocationButton={false}
+        >
+          {/* Driver position marker */}
+          {location && (
+            <Marker
+              coordinate={{ latitude: location.latitude, longitude: location.longitude }}
+              title="You"
+            >
+              <View style={styles.driverMarker}>
+                <Ionicons name="car" size={14} color="#fff" />
+              </View>
+            </Marker>
+          )}
+
+          {/* Stop markers */}
+          {stops.map((stop, idx) => {
+            if (!stop.latitude || !stop.longitude) return null;
+            const isCompleted = stop.status === 'completed';
+            const isNext = stop.status === 'next_stop';
+            return (
+              <Marker
+                key={stop.id}
+                coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
+                title={stop.name}
+              >
+                <View style={[styles.stopMarker, {
+                  backgroundColor: isCompleted ? '#16a34a' : isNext ? colors.primary : '#9e9aa8',
+                }]}>
+                  <Text style={styles.stopMarkerText}>{idx + 1}</Text>
+                </View>
+              </Marker>
+            );
+          })}
+        </MapView>
+
+        {/* SOS overlay on map */}
+        <TouchableOpacity style={styles.sosOverlay} activeOpacity={0.8}>
+          <Text style={styles.sosOverlayText}>SOS</Text>
         </TouchableOpacity>
       </View>
 
@@ -316,6 +373,50 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
+  // Map
+  mapContainer: { height: MAP_HEIGHT, position: 'relative' },
+  map: { flex: 1 },
+  driverMarker: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#643ee8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  stopMarker: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  stopMarkerText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  sosOverlay: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  sosOverlayText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
   // Header
   header: {
     flexDirection: 'row',
@@ -329,13 +430,6 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1 },
   headerTitle: { fontSize: 18, fontWeight: '700' },
   headerSub: { fontSize: 13, marginTop: 1 },
-  sosBtn: {
-    backgroundColor: '#dc2626',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  sosText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
   scrollContent: { padding: 16 },
 

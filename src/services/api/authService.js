@@ -16,6 +16,8 @@ const realAuthService = {
   refreshToken: (token) => axiosInstance.post('/auth/refresh', { refreshToken: token }),
   logout: () => axiosInstance.post('/auth/logout'),
   getProfile: () => axiosInstance.get('/auth/me'),
+  sendOtp: (phone) => axiosInstance.post('/auth/send-otp', { phone }),
+  verifyOtpCode: (phone, otp) => axiosInstance.post('/auth/verify-otp', { phone, otp }),
 };
 
 // Single export — screens/thunks never need to know which is active

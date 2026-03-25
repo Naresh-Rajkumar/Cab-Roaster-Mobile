@@ -1,8 +1,15 @@
 /**
  * Live Tracking Screen — Figma: Employee Handoff 09/02/2026 "Track Location"
  * Two states: map + minimal panel, and expanded ride-detail sheet.
+ *
+ * Real-time data flow:
+ *   1. Socket connects (via useTrackingSocket)
+ *   2. getActiveCabs() → active_cabs event → find our cab → watchCab(cabId)
+ *   3. cab_location_update / cab_detail → update marker + trail on MapView
+ *   4. cab_offline → show OFFLINE status badge
+ *   5. On unmount → unwatchCab(cabId)
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +18,7 @@ import {
   ScrollView,
   Dimensions,
 } from 'react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -20,6 +28,13 @@ import { fetchCurrentRide, fetchTripStops } from '../../redux/slices/tripSlice';
 import { useTrackingSocket } from '../../hooks/useTrackingSocket';
 
 const { height: SCREEN_H } = Dimensions.get('window');
+
+const DEFAULT_REGION = {
+  latitude: 12.9716,
+  longitude: 80.2209,
+  latitudeDelta: 0.05,
+  longitudeDelta: 0.05,
+};
 
 // Map stop status to display values
 function stopDisplay(status) {
@@ -31,40 +46,58 @@ function stopDisplay(status) {
   }
 }
 
-// ─── Fake Map Render ──────────────────────────────────────────────────────────
-const FakeMap = ({ colors }) => (
-  <View style={[styles.mapView, { backgroundColor: '#d1d5db' }]}>
-    {/* Base road grid */}
-    {[20, 38, 55, 72].map((top) => (
-      <View key={`h${top}`} style={[styles.mapRoadH, { top: `${top}%`, backgroundColor: '#e5e7eb' }]} />
-    ))}
-    {[25, 48, 68].map((left) => (
-      <View key={`v${left}`} style={[styles.mapRoadV, { left: `${left}%`, backgroundColor: '#e5e7eb' }]} />
-    ))}
-    {/* Route line - solid green (completed) */}
-    <View style={styles.routeSolidLine} />
-    {/* Route line - dashed purple (remaining) */}
-    {[0, 14, 28, 42, 56, 70].map((top) => (
-      <View key={`d${top}`} style={[styles.routeDashSegment, { top: `${top + 30}%` }]} />
-    ))}
-    {/* Pickup dot */}
-    <View style={[styles.mapPickupDot, { backgroundColor: '#16a34a', borderColor: '#fff' }]} />
-    {/* Car marker */}
-    <View style={[styles.mapCarMarker, { backgroundColor: colors.primaryContainer, borderColor: colors.primary }]}>
-      <Ionicons name="car" size={18} color={colors.primary} />
+// ─── Live Map Component ───────────────────────────────────────────────────────
+const LiveMap = ({ cabLocation, trail, mapStatus, colors, mapRef }) => (
+  <View style={styles.mapView}>
+    <MapView
+      ref={mapRef}
+      style={StyleSheet.absoluteFillObject}
+      initialRegion={DEFAULT_REGION}
+      showsUserLocation={false}
+      showsMyLocationButton={false}
+      showsCompass={false}
+      toolbarEnabled={false}
+    >
+      {/* GPS trail polyline */}
+      {trail.length > 1 && (
+        <Polyline
+          coordinates={trail}
+          strokeColor={colors.primary}
+          strokeWidth={3}
+          lineDashPattern={[8, 4]}
+        />
+      )}
+
+      {/* Cab marker */}
+      {cabLocation && (
+        <Marker
+          coordinate={{ latitude: cabLocation.latitude, longitude: cabLocation.longitude }}
+          anchor={{ x: 0.5, y: 0.5 }}
+        >
+          <View style={[styles.cabMarker, { backgroundColor: colors.primaryContainer, borderColor: colors.primary }]}>
+            <Ionicons name="car" size={18} color={colors.primary} />
+          </View>
+        </Marker>
+      )}
+    </MapView>
+
+    {/* Map status badge */}
+    <View style={styles.statusBadgeContainer}>
+      <View style={[
+        styles.statusBadge,
+        {
+          backgroundColor:
+            mapStatus === 'live' ? '#16a34a' :
+            mapStatus === 'offline' ? '#dc2626' :
+            '#6b7280',
+        },
+      ]}>
+        <View style={[styles.statusDot, mapStatus === 'live' && styles.statusDotPulse]} />
+        <Text style={styles.statusText}>
+          {mapStatus === 'live' ? 'LIVE' : mapStatus === 'offline' ? 'OFFLINE' : 'CONNECTING'}
+        </Text>
+      </View>
     </View>
-    {/* ETA badge on route */}
-    <View style={[styles.routeEtaBadge, { backgroundColor: colors.primary }]}>
-      <View style={[styles.routeEtaDot, { backgroundColor: '#fff' }]} />
-      <Text style={styles.routeEtaText}>15 mins</Text>
-    </View>
-    {/* Lower ETA badge */}
-    <View style={[styles.routeEtaBadge2, { backgroundColor: colors.primary }]}>
-      <View style={[styles.routeEtaDot, { backgroundColor: '#fff' }]} />
-      <Text style={styles.routeEtaText}>25 mins</Text>
-    </View>
-    {/* Dest dot */}
-    <View style={[styles.mapDestDot, { backgroundColor: colors.primary, borderColor: '#fff' }]} />
   </View>
 );
 
@@ -77,8 +110,15 @@ const LiveTrackingScreen = ({ navigation, route }) => {
 
   const currentRide = useSelector((state) => state.trip.currentRide);
   const tripStops = useSelector((state) => state.trip.tripStops);
-  const { socket, connected, getActiveCabs } = useTrackingSocket();
-  const [liveCabLocation, setLiveCabLocation] = useState(null);
+
+  // Map state
+  const mapRef = useRef(null);
+  const [cabLocation, setCabLocation] = useState(null);
+  const [trail, setTrail] = useState([]);
+  const [mapStatus, setMapStatus] = useState('connecting'); // connecting | live | offline
+  const watchedCabIdRef = useRef(null); // numeric cabId for watch_cab
+
+  const { socket, connected, getActiveCabs, watchCab, unwatchCab } = useTrackingSocket();
 
   useEffect(() => {
     dispatch(fetchCurrentRide());
@@ -90,28 +130,138 @@ const LiveTrackingScreen = ({ navigation, route }) => {
     }
   }, [currentRide?.id, dispatch]);
 
-  // Listen for real-time cab location updates via socket
+  // ─── Socket event handlers ─────────────────────────────────────────────────
+
+  const handleActiveCabs = useCallback((cabs) => {
+    if (!currentRide?.vehicleNo) return;
+    const list = Array.isArray(cabs) ? cabs : [];
+
+    // Find our cab by vehicleNo (cabReg) or cabId
+    const match = list.find(
+      (c) => c.cabReg === currentRide.vehicleNo ||
+             String(c.cabId) === String(currentRide.cabId)
+    );
+
+    if (match?.location?.latitude) {
+      const coord = { latitude: match.location.latitude, longitude: match.location.longitude };
+      setCabLocation({ ...coord, speed: match.location.speed || 0 });
+      setMapStatus('live');
+      animateMapTo(coord);
+
+      // Subscribe to this cab's detailed trail updates
+      if (!watchedCabIdRef.current && match.cabId) {
+        watchedCabIdRef.current = match.cabId;
+        watchCab(match.cabId);
+      }
+    }
+  }, [currentRide?.vehicleNo, currentRide?.cabId, watchCab]);
+
+  const handleCabLocationUpdate = useCallback((data) => {
+    if (!currentRide?.vehicleNo && !currentRide?.cabId) return;
+
+    const isOurCab =
+      String(data.cabId) === String(currentRide?.cabId) ||
+      data.cabReg === currentRide?.vehicleNo;
+
+    if (!isOurCab) return;
+
+    const coord = { latitude: data.latitude, longitude: data.longitude };
+    setCabLocation({ ...coord, speed: data.speed || 0 });
+    setTrail((prev) => {
+      const updated = [...prev, coord];
+      return updated.length > 200 ? updated.slice(-200) : updated;
+    });
+    setMapStatus('live');
+    animateMapTo(coord);
+
+    // If we haven't watched yet (e.g. cab came online after screen loaded), watch now
+    if (!watchedCabIdRef.current && data.cabId) {
+      watchedCabIdRef.current = data.cabId;
+      watchCab(data.cabId);
+    }
+  }, [currentRide?.cabId, currentRide?.vehicleNo, watchCab]);
+
+  const handleCabDetail = useCallback((data) => {
+    if (!data.location?.latitude) return;
+
+    const isOurCab =
+      String(data.cabId) === String(currentRide?.cabId) ||
+      data.cabReg === currentRide?.vehicleNo;
+
+    if (!isOurCab) return;
+
+    const coord = { latitude: data.location.latitude, longitude: data.location.longitude };
+    setCabLocation({ ...coord, speed: data.location.speed || 0 });
+    setMapStatus('live');
+    animateMapTo(coord);
+
+    if (data.history?.length) {
+      setTrail(
+        data.history
+          .filter((p) => p.latitude && p.longitude)
+          .map((p) => ({ latitude: p.latitude, longitude: p.longitude }))
+      );
+    }
+  }, [currentRide?.cabId, currentRide?.vehicleNo]);
+
+  const handleCabOffline = useCallback((data) => {
+    if (String(data.cabId) === String(watchedCabIdRef.current)) {
+      setMapStatus('offline');
+    }
+  }, []);
+
+  // Animate map camera to cab position
+  const animateMapTo = useCallback((coord) => {
+    mapRef.current?.animateToRegion(
+      {
+        latitude: coord.latitude,
+        longitude: coord.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      },
+      600
+    );
+  }, []);
+
+  // ─── Attach / detach socket listeners ────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
-    const handleLocationUpdate = (data) => {
-      // data: { cabId, latitude, longitude, speed, heading, timestamp }
-      setLiveCabLocation(data);
-    };
+    socket.on('active_cabs', handleActiveCabs);
+    socket.on('cab_location_update', handleCabLocationUpdate);
+    socket.on('cab_detail', handleCabDetail);
+    socket.on('cab_offline', handleCabOffline);
 
-    socket.on('cab_location_update', handleLocationUpdate);
-
-    // Request initial active cabs
     if (connected) {
       getActiveCabs();
     }
 
     return () => {
-      socket.off('cab_location_update', handleLocationUpdate);
+      socket.off('active_cabs', handleActiveCabs);
+      socket.off('cab_location_update', handleCabLocationUpdate);
+      socket.off('cab_detail', handleCabDetail);
+      socket.off('cab_offline', handleCabOffline);
     };
-  }, [socket, connected, getActiveCabs]);
+  }, [socket, connected, handleActiveCabs, handleCabLocationUpdate, handleCabDetail, handleCabOffline, getActiveCabs]);
 
-  // Derive display data from Redux (fall back to empty strings)
+  // Re-request active cabs when connection is established
+  useEffect(() => {
+    if (connected && socket) {
+      getActiveCabs();
+    }
+  }, [connected, socket, getActiveCabs]);
+
+  // Cleanup: unwatch cab on unmount
+  useEffect(() => {
+    return () => {
+      if (watchedCabIdRef.current) {
+        unwatchCab(watchedCabIdRef.current);
+        watchedCabIdRef.current = null;
+      }
+    };
+  }, [unwatchCab]);
+
+  // ─── Derive display data from Redux ──────────────────────────────────────────
   const ride = {
     tripNumber: currentRide?.tripNumber ?? '',
     vehicleNo: currentRide?.vehicleNo ?? '',
@@ -119,11 +269,8 @@ const LiveTrackingScreen = ({ navigation, route }) => {
     driverName: currentRide?.driverName ?? '',
     nextStop: currentRide?.dropoff ?? '',
     eta: currentRide?.eta ?? '',
-    currentLocation: '',
-    currentAddress: '',
   };
 
-  // Build ROUTE_STOPS from Redux tripStops
   const routeStops = tripStops.map((stop) => {
     const display = stopDisplay(stop.status);
     return {
@@ -136,13 +283,12 @@ const LiveTrackingScreen = ({ navigation, route }) => {
     };
   });
 
-  // Find the "current" stop (first non-completed)
   const currentStopIndex = routeStops.findIndex((s) => s.status !== 'completed');
 
   return (
     <View style={styles.container}>
       {/* Header overlay on map */}
-      <View style={[styles.header]}>
+      <View style={styles.header}>
         <TouchableOpacity
           style={[styles.headerBtn, { backgroundColor: '#fff' }]}
           onPress={() => navigation.goBack()}
@@ -153,8 +299,14 @@ const LiveTrackingScreen = ({ navigation, route }) => {
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Map */}
-      <FakeMap colors={colors} />
+      {/* Real-time Map */}
+      <LiveMap
+        cabLocation={cabLocation}
+        trail={trail}
+        mapStatus={mapStatus}
+        colors={colors}
+        mapRef={mapRef}
+      />
 
       {/* Bottom Panel */}
       {!showDetails ? (
@@ -331,84 +483,50 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
-  mapRoadH: { position: 'absolute', left: 0, right: 0, height: 10 },
-  mapRoadV: { position: 'absolute', top: 0, bottom: 0, width: 10 },
-  routeSolidLine: {
-    position: 'absolute',
-    width: 4,
-    left: '48%',
-    top: '8%',
-    height: '22%',
-    backgroundColor: '#16a34a',
-    borderRadius: 2,
-  },
-  routeDashSegment: {
-    position: 'absolute',
-    width: 4,
-    left: '48%',
-    height: 12,
-    backgroundColor: '#643ee8',
-    borderRadius: 2,
-    opacity: 0.8,
-  },
-  mapPickupDot: {
-    position: 'absolute',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 3,
-    top: '6%',
-    left: '46.5%',
-  },
-  mapCarMarker: {
-    position: 'absolute',
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+  cabMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    top: '25%',
-    left: '43%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 4,
   },
-  routeEtaBadge: {
+
+  // Status badge
+  statusBadgeContainer: {
     position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 5,
+  },
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 20,
-    top: '40%',
-    left: '53%',
-    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    gap: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  routeEtaBadge2: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 20,
-    top: '62%',
-    left: '53%',
-    gap: 4,
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#fff',
   },
-  routeEtaDot: { width: 6, height: 6, borderRadius: 3 },
-  routeEtaText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  mapDestDot: {
-    position: 'absolute',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 3,
-    top: '75%',
-    left: '46.5%',
+  statusDotPulse: {
+    opacity: 0.9,
   },
+  statusText: { color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
 
   // Bottom panel
   bottomPanel: {
@@ -489,10 +607,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
-  currentLocRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
-  currentLocLabel: { fontSize: 12 },
-  currentLocName: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
-  currentLocAddress: { fontSize: 12, lineHeight: 18, marginBottom: 10 },
   trackBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 44, borderRadius: 12, gap: 6 },
   trackBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });

@@ -8,6 +8,8 @@ import store from './src/redux/store';
 import { ThemeProvider } from './src/theme/ThemeProvider';
 import RootNavigator from './src/navigation/RootNavigator';
 import useAppFonts from './src/hooks/useAppFonts';
+import { loadPersistedToken, fetchProfile } from './src/redux/slices/authSlice';
+import { setAuthToken } from './src/services/axiosConfig';
 
 // Keep splash screen visible while loading fonts
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -25,6 +27,16 @@ const AppContent = () => {
       await SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    // Restore persisted auth token on boot
+    loadPersistedToken().then((token) => {
+      if (token) {
+        setAuthToken(token);
+        store.dispatch(fetchProfile());
+      }
+    });
+  }, []);
 
   useEffect(() => {
     onLayoutRootView();

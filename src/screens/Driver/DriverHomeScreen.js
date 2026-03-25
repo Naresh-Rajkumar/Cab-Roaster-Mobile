@@ -65,7 +65,7 @@ const UpcomingTripCard = ({ item, onStartTrip }) => {
         </View>
 
         <View style={styles.stopRow}>
-          <Ionicons name="business" size={14} color="#6B4EFF" />
+          <Ionicons name="business" size={14} color="#643ee8" />
           <View style={styles.stopTextContainer}>
             <Text style={[styles.stopName, { color: colors.text, fontSize: 12 }]}>
               {item.destination?.name}
@@ -78,7 +78,7 @@ const UpcomingTripCard = ({ item, onStartTrip }) => {
       </View>
 
       <TouchableOpacity
-        style={[styles.startTripButtonSmall, { backgroundColor: '#6B4EFF' }]}
+        style={[styles.startTripButtonSmall, { backgroundColor: '#643ee8' }]}
         onPress={() => onStartTrip(item)}
         activeOpacity={0.8}
       >
@@ -121,7 +121,7 @@ export default function DriverHomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6B4EFF" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#643ee8" />
         }
       >
         {/* Header */}
@@ -148,14 +148,14 @@ export default function DriverHomeScreen({ navigation }) {
           <View style={styles.statsRow}>
             <View style={[styles.statCard, { backgroundColor: colors.card }]}>
               <View style={[styles.statIconContainer, { backgroundColor: '#EDE7FF' }]}>
-                <Ionicons name="map" size={22} color="#6B4EFF" />
+                <Ionicons name="map" size={22} color="#643ee8" />
               </View>
               <Text style={[styles.statCount, { color: colors.text }]}>{totalTrips}</Text>
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total Trips</Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: colors.card }]}>
               <View style={[styles.statIconContainer, { backgroundColor: '#EDE7FF' }]}>
-                <Ionicons name="people" size={22} color="#6B4EFF" />
+                <Ionicons name="people" size={22} color="#643ee8" />
               </View>
               <Text style={[styles.statCount, { color: colors.text }]}>{totalPickups}</Text>
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Pickups</Text>
@@ -168,7 +168,7 @@ export default function DriverHomeScreen({ navigation }) {
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Next Trip</Text>
           {isLoading && !nextTrip ? (
             <View style={[styles.nextTripCard, { backgroundColor: colors.card, alignItems: 'center', padding: 32 }]}>
-              <ActivityIndicator size="large" color="#6B4EFF" />
+              <ActivityIndicator size="large" color="#643ee8" />
             </View>
           ) : nextTrip ? (
             <View style={[styles.nextTripCard, { backgroundColor: colors.card }]}>
@@ -208,7 +208,7 @@ export default function DriverHomeScreen({ navigation }) {
                 </View>
 
                 <View style={styles.stopRow}>
-                  <Ionicons name="business" size={18} color="#6B4EFF" />
+                  <Ionicons name="business" size={18} color="#643ee8" />
                   <View style={styles.stopTextContainer}>
                     <Text style={[styles.stopName, { color: colors.text }]}>
                       {nextTrip.destination?.name}
@@ -223,7 +223,7 @@ export default function DriverHomeScreen({ navigation }) {
               {/* Bottom action row */}
               <View style={styles.actionRow}>
                 <TouchableOpacity
-                  style={[styles.startTripButton, { backgroundColor: '#6B4EFF' }]}
+                  style={[styles.startTripButton, { backgroundColor: '#643ee8' }]}
                   onPress={() => handleStartTrip(nextTrip)}
                   activeOpacity={0.85}
                 >

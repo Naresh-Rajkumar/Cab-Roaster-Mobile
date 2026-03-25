@@ -83,10 +83,13 @@ export const fetchDriverDashboard = createAsyncThunk(
       const nextTripRaw = unwrap(nextTripRes);
       const upcomingRaw = unwrap(upcomingRes);
 
-      // stats is a plain object { totalTrips, totalPickups, date }
+      // BE returns { activeTrips, upcomingTrips, completedTrips, alerts }
+      const active = statsRaw?.activeTrips ?? 0;
+      const upcoming = statsRaw?.upcomingTrips ?? 0;
+      const completed = statsRaw?.completedTrips ?? 0;
       const stats = {
-        totalTrips: statsRaw?.totalTrips ?? statsRaw?.trips ?? 0,
-        totalPickups: statsRaw?.totalPickups ?? statsRaw?.pickups ?? 0,
+        totalTrips: active + upcoming + completed,
+        totalPickups: completed,
       };
 
       // nextTrip: paginated list, take first item

@@ -47,6 +47,33 @@ export const mockAuthService = {
     };
   },
 
+  sendOtp: async (phone) => {
+    await delay();
+    return {
+      data: {
+        success: true,
+        message: 'OTP sent successfully',
+        data: { phone, devOtp: '123456' },
+      },
+    };
+  },
+
+  verifyOtpCode: async (phone, otp) => {
+    await delay();
+    const user = MOCK_USERS['driver'] ?? MOCK_USERS.employee;
+    return {
+      data: {
+        success: true,
+        message: 'Success',
+        data: {
+          accessToken: `mock-jwt-driver-${Date.now()}`,
+          refreshToken: `mock-refresh-driver-${Date.now()}`,
+          user,
+        },
+      },
+    };
+  },
+
   refreshToken: async (refreshToken) => {
     await delay();
     return {

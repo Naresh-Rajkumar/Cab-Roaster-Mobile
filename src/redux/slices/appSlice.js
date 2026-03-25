@@ -44,6 +44,17 @@ export const fetchNotifications = createAsyncThunk(
   }
 );
 
+export const markAllNotificationsRead = createAsyncThunk(
+  'app/markAllNotificationsRead',
+  async (_, { rejectWithValue }) => {
+    try {
+      await requestsService.markNotificationsRead();
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to mark notifications read');
+    }
+  }
+);
+
 export const submitRequest = createAsyncThunk(
   'app/submitRequest',
   async (payload, { rejectWithValue }) => {
@@ -103,6 +114,11 @@ const appSlice = createSlice({
       .addCase(fetchNotifications.fulfilled, (state, action) => {
         state.notifications = action.payload;
         state.unreadCount = action.payload.filter((n) => n.unread).length;
+      })
+      // Optimistically clear unread on pending; API failure is silent (read-state is cosmetic)
+      .addCase(markAllNotificationsRead.pending, (state) => {
+        state.notifications = state.notifications.map((n) => ({ ...n, unread: false }));
+        state.unreadCount = 0;
       })
       .addCase(submitRequest.pending, (state) => {
         state.isSubmitting = true;

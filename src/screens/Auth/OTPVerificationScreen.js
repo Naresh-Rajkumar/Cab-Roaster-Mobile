@@ -1,3 +1,11 @@
+/**
+ * OTPVerificationScreen — Figma: Onboarding-Driver / Login (553:12387)
+ *
+ * Unified 6-digit OTP verification for both driver and employee flows.
+ * For driver role: verifyOTP thunk calls POST /auth/verify-otp (OTP-based).
+ * For employee role: verifyOTP thunk calls POST /auth/employee-login (password-based).
+ */
+
 import React, { useState, useRef } from 'react';
 import {
   View,
@@ -7,33 +15,40 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
-import { useTheme } from '../../theme/ThemeProvider';
-import { verifyOTP } from '../../redux/slices/authSlice';
-import { Header, Button } from '../../components';
-import spacing from '../../theme/spacing.json';
-import typography from '../../theme/typography.json';
+import { Ionicons } from '@expo/vector-icons';
+import { verifyOTP, sendOtp } from '../../redux/slices/authSlice';
 
-const OTP_LENGTH = 4;
+// ─── Design tokens (exact from Figma 553:12387) ───────────────────────────────
+const PRIMARY    = '#643ee8';
+const BG         = '#F5F4F9';
+const TEXT       = '#312E3A';
+const TEXT_SEC   = '#5E5C66';
+const WHITE      = '#ffffff';
+const BOX_BORDER = '#D2C5FF';
+const BRAND_RED  = '#EE001D';
+const BRAND_GRY  = '#4A4A4A';
+const ERROR      = '#dc2626';
+
+const OTP_LENGTH = 6;
 
 const OTPVerificationScreen = ({ navigation, route }) => {
   const { phone } = route.params || {};
-  const { theme } = useTheme();
-  const colors = theme.colors;
   const dispatch = useDispatch();
   const { isLoading, error } = useSelector((state) => state.auth);
 
   const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
   const inputRefs = useRef([]);
 
-  const handleOTPChange = (value, index) => {
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
-
-    if (value && index < OTP_LENGTH - 1) {
+  const handleOtpChange = (value, index) => {
+    const cleaned = value.replace(/[^0-9]/g, '');
+    const next = [...otp];
+    next[index] = cleaned;
+    setOtp(next);
+    if (cleaned && index < OTP_LENGTH - 1) {
       inputRefs.current[index + 1]?.focus();
     }
   };
@@ -45,126 +60,92 @@ const OTPVerificationScreen = ({ navigation, route }) => {
   };
 
   const handleVerify = () => {
-    const otpString = otp.join('');
-    if (otpString.length !== OTP_LENGTH) return;
-    dispatch(verifyOTP({ phone, otp: otpString }));
+    const code = otp.join('');
+    if (code.length !== OTP_LENGTH) return;
+    dispatch(verifyOTP({ phone, otp: code }));
   };
 
-  const isOTPComplete = otp.every((digit) => digit !== '');
+  const handleResend = () => {
+    if (phone) {
+      dispatch(sendOtp(phone));
+    }
+  };
+
+  const isComplete = otp.every((d) => d !== '');
 
   return (
-    <SafeAreaView
-      style={[styles.safe, { backgroundColor: colors.background }]}
-      edges={['bottom']}
-    >
-      <Header
-        title="Verify OTP"
-        showBack
-        onBackPress={() => navigation.goBack()}
-      />
+    <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.content}>
-          <Text
-            style={[
-              styles.title,
-              {
-                color: colors.text,
-                fontFamily: typography.fontFamily.semiBold,
-              },
-            ]}
-          >
-            Enter verification code
-          </Text>
-          <Text
-            style={[
-              styles.subtitle,
-              {
-                color: colors.textSecondary,
-                fontFamily: typography.fontFamily.regular,
-              },
-            ]}
-          >
-            We've sent a 4-digit code to {phone}
+        <View style={styles.inner}>
+
+          {/* Brand */}
+          <View style={styles.brandRow}>
+            <Text style={styles.brandV}>v</Text>
+            <Text style={styles.brandName}>Commute</Text>
+          </View>
+
+          {/* Title */}
+          <Text style={styles.title}>Verification Code</Text>
+          <Text style={styles.subtitle}>
+            {"We've sent a code to your phone. Enter it below."}
           </Text>
 
-          <View style={styles.otpContainer}>
-            {otp.map((digit, index) => (
+          {/* Phone + edit */}
+          <View style={styles.phoneRow}>
+            <Text style={styles.phoneText}>{phone}</Text>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.editBtn}>
+              <Ionicons name="pencil-outline" size={18} color={TEXT} />
+            </TouchableOpacity>
+          </View>
+
+          {/* 6 OTP boxes */}
+          <View style={styles.otpRow}>
+            {otp.map((digit, i) => (
               <TextInput
-                key={index}
-                ref={(ref) => (inputRefs.current[index] = ref)}
+                key={i}
+                ref={(r) => (inputRefs.current[i] = r)}
                 value={digit}
-                onChangeText={(value) =>
-                  handleOTPChange(value.replace(/[^0-9]/g, ''), index)
-                }
-                onKeyPress={(e) => handleKeyPress(e, index)}
+                onChangeText={(v) => handleOtpChange(v, i)}
+                onKeyPress={(e) => handleKeyPress(e, i)}
                 keyboardType="number-pad"
                 maxLength={1}
                 style={[
-                  styles.otpInput,
-                  {
-                    backgroundColor: colors.inputBackground,
-                    borderColor: digit
-                      ? colors.primary
-                      : colors.inputBorder,
-                    color: colors.text,
-                    fontFamily: typography.fontFamily.bold,
-                  },
+                  styles.otpBox,
+                  digit ? styles.otpBoxFilled : null,
                 ]}
+                textAlign="center"
               />
             ))}
           </View>
 
-          {error && (
-            <Text
-              style={[
-                styles.errorText,
-                {
-                  color: colors.error,
-                  fontFamily: typography.fontFamily.regular,
-                },
-              ]}
-            >
-              {error}
-            </Text>
-          )}
+          {/* Error */}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          <Button
-            title="Verify"
+          {/* Verify button */}
+          <TouchableOpacity
+            style={[styles.btn, !isComplete && styles.btnDisabled]}
             onPress={handleVerify}
-            loading={isLoading}
-            disabled={!isOTPComplete}
-            fullWidth
-            size="lg"
-            style={styles.verifyButton}
-          />
-
-          <TouchableOpacity style={styles.resendContainer}>
-            <Text
-              style={[
-                styles.resendText,
-                {
-                  color: colors.textSecondary,
-                  fontFamily: typography.fontFamily.regular,
-                },
-              ]}
-            >
-              Didn't receive code?{' '}
-            </Text>
-            <Text
-              style={[
-                styles.resendLink,
-                {
-                  color: colors.primary,
-                  fontFamily: typography.fontFamily.semiBold,
-                },
-              ]}
-            >
-              Resend
-            </Text>
+            activeOpacity={0.85}
+            disabled={!isComplete || isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color={WHITE} />
+            ) : (
+              <Text style={styles.btnText}>Verify</Text>
+            )}
           </TouchableOpacity>
+
+          {/* Resend */}
+          <View style={styles.resendRow}>
+            <Text style={styles.resendText}>Didn't receive code? </Text>
+            <TouchableOpacity onPress={handleResend} disabled={isLoading}>
+              <Text style={styles.resendLink}>Resend</Text>
+            </TouchableOpacity>
+          </View>
+
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -172,59 +153,95 @@ const OTPVerificationScreen = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  safe: {
+  container: { flex: 1, backgroundColor: BG },
+  flex: { flex: 1 },
+  inner: {
     flex: 1,
-  },
-  flex: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    padding: spacing.xl,
+    paddingHorizontal: 16,
     alignItems: 'center',
+    justifyContent: 'center',
   },
+
+  // Brand
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 28,
+  },
+  brandV:    { fontSize: 24, fontWeight: '800', color: BRAND_RED },
+  brandName: { fontSize: 24, fontWeight: '700', color: BRAND_GRY },
+
+  // Title
   title: {
-    fontSize: typography.fontSize.xl,
-    marginBottom: spacing.sm,
+    fontSize: 20,
+    fontWeight: '700',
+    color: TEXT,
+    marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: typography.fontSize.md,
+    fontSize: 14,
+    color: TEXT_SEC,
     textAlign: 'center',
-    marginBottom: spacing.xxl,
+    lineHeight: 22,
+    marginBottom: 20,
   },
-  otpContainer: {
+
+  // Phone row
+  phoneRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.xl,
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 24,
   },
-  otpInput: {
-    width: 56,
-    height: 56,
-    borderRadius: spacing.borderRadius.md,
-    borderWidth: 1.5,
-    textAlign: 'center',
-    fontSize: typography.fontSize.xxl,
+  phoneText: { fontSize: 16, fontWeight: '500', color: TEXT },
+  editBtn: { padding: 4 },
+
+  // OTP boxes — Figma: 47×50, radius=8, border #D2C5FF
+  otpRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
   },
+  otpBox: {
+    width: 47,
+    height: 50,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: BOX_BORDER,
+    backgroundColor: WHITE,
+    fontSize: 20,
+    fontWeight: '700',
+    color: TEXT,
+  },
+  otpBoxFilled: {
+    borderColor: PRIMARY,
+  },
+
   errorText: {
-    fontSize: typography.fontSize.sm,
-    marginBottom: spacing.base,
+    color: ERROR,
+    fontSize: 13,
     textAlign: 'center',
+    marginBottom: 12,
   },
-  verifyButton: {
-    marginTop: spacing.base,
+
+  // Verify button — Figma: h=44, radius=8, #643ee8
+  btn: {
+    width: '100%',
+    height: 44,
+    backgroundColor: PRIMARY,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
   },
-  resendContainer: {
-    flexDirection: 'row',
-    marginTop: spacing.xl,
-  },
-  resendText: {
-    fontSize: typography.fontSize.md,
-  },
-  resendLink: {
-    fontSize: typography.fontSize.md,
-  },
+  btnDisabled: { backgroundColor: '#B9C0C9' },
+  btnText: { color: WHITE, fontSize: 16, fontWeight: '700' },
+
+  // Resend
+  resendRow: { flexDirection: 'row', alignItems: 'center' },
+  resendText: { fontSize: 14, color: TEXT_SEC },
+  resendLink: { fontSize: 14, fontWeight: '600', color: PRIMARY },
 });
 
 export default OTPVerificationScreen;

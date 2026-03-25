@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
-import { fetchNotifications, markNotificationsRead } from '../../redux/slices/appSlice';
+import { fetchNotifications, markAllNotificationsRead } from '../../redux/slices/appSlice';
 
 const NotificationItem = ({ item, colors }) => (
   <View style={[styles.notifCard, { backgroundColor: colors.surface }]}>
@@ -58,7 +58,7 @@ const NotificationsScreen = () => {
   };
 
   const markAllRead = () => {
-    dispatch(markNotificationsRead());
+    dispatch(markAllNotificationsRead());
   };
 
   // Group by category field or date proximity

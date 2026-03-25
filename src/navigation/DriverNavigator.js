@@ -66,18 +66,19 @@ const DriverNavigator = () => {
           const iconName = focused ? icons.active : icons.inactive;
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: colors.tabBarActive,
-        tabBarInactiveTintColor: colors.tabBarInactive,
+        tabBarActiveTintColor: '#643ee8',
+        tabBarInactiveTintColor: '#9e9aa8',
         tabBarStyle: {
-          backgroundColor: colors.tabBar,
-          borderTopColor: colors.borderLight,
+          backgroundColor: '#F5F6F7',
+          borderTopColor: '#E8E6F0',
           borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 10,
+          height: 80,
+          paddingBottom: 12,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
+          fontWeight: '500',
         },
       })}
     >

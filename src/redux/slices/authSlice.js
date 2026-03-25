@@ -1,6 +1,27 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import * as SecureStore from 'expo-secure-store';
 import { authService } from '../../services/api/authService';
 import { setAuthToken } from '../../services/axiosConfig';
+
+const TOKEN_KEY = 'auth_access_token';
+
+/** Persist token to secure storage (fire-and-forget — never blocks auth flow) */
+function persistToken(token) {
+  if (token) {
+    SecureStore.setItemAsync(TOKEN_KEY, token).catch(() => {});
+  } else {
+    SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+  }
+}
+
+/** Load persisted token on app boot. Returns token string or null. */
+export async function loadPersistedToken() {
+  try {
+    return await SecureStore.getItemAsync(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
 
 // ─── Thunks ───────────────────────────────────────────────────────────────────
 
@@ -9,8 +30,10 @@ export const loginUser = createAsyncThunk(
   async (credentials, { rejectWithValue }) => {
     try {
       const response = await authService.login(credentials);
-      if (response.data?.data?.accessToken) {
-        setAuthToken(response.data.data.accessToken);
+      const token = response.data?.data?.accessToken;
+      if (token) {
+        setAuthToken(token);
+        persistToken(token);
       }
       return response.data;
     } catch (error) {
@@ -19,16 +42,35 @@ export const loginUser = createAsyncThunk(
   }
 );
 
-// verifyOTP — NestJS uses single-step employee-login (no separate OTP endpoint)
-// Maps phone + otp to employee-login credentials
+export const sendOtp = createAsyncThunk(
+  'auth/sendOtp',
+  async (phone, { rejectWithValue }) => {
+    try {
+      const response = await authService.sendOtp(phone);
+      return response.data?.data ?? response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to send OTP');
+    }
+  }
+);
+
+// verifyOTP — for driver role uses the dedicated /auth/verify-otp endpoint;
+// for employee role falls back to /auth/employee-login with password.
 export const verifyOTP = createAsyncThunk(
   'auth/verifyOTP',
   async ({ phone, otp }, { getState, rejectWithValue }) => {
     try {
       const role = getState().auth.pendingRole || 'employee';
-      const response = await authService.login({ phone, password: otp, role });
-      if (response.data?.data?.accessToken) {
-        setAuthToken(response.data.data.accessToken);
+      let response;
+      if (role === 'driver') {
+        response = await authService.verifyOtpCode(phone, otp);
+      } else {
+        response = await authService.login({ phone, password: otp, role });
+      }
+      const token = response.data?.data?.accessToken;
+      if (token) {
+        setAuthToken(token);
+        persistToken(token);
       }
       return response.data;
     } catch (error) {
@@ -46,6 +88,7 @@ export const logoutUser = createAsyncThunk(
       // Always allow local logout even if server call fails
     } finally {
       setAuthToken(null);
+      persistToken(null);
     }
   }
 );
@@ -117,7 +160,8 @@ const authSlice = createSlice({
         const data = action.payload?.data || action.payload;
         state.user = data?.user || null;
         state.token = data?.accessToken || null;
-        state.role = data?.user?.role || state.pendingRole || 'employee';
+        // Use roleName (lowercase: "employee", "driver") not role (display: "Employee", "Driver")
+        state.role = data?.user?.roleName || state.pendingRole || 'employee';
         state.isAuthenticated = !!(data?.accessToken);
         // Employee without empCode/employeeId needs onboarding (no employee record yet)
         const role = state.role;
@@ -140,7 +184,7 @@ const authSlice = createSlice({
         const data = action.payload?.data || action.payload;
         state.user = data?.user || null;
         state.token = data?.accessToken || null;
-        state.role = data?.user?.role || state.pendingRole || 'employee';
+        state.role = data?.user?.roleName || state.pendingRole || 'employee';
         state.isAuthenticated = !!(data?.accessToken);
         const role = state.role;
         const user = data?.user;
@@ -149,6 +193,18 @@ const authSlice = createSlice({
         }
       })
       .addCase(verifyOTP.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload;
+      })
+
+      .addCase(sendOtp.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(sendOtp.fulfilled, (state) => {
+        state.isLoading = false;
+      })
+      .addCase(sendOtp.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload;
       })
@@ -162,9 +218,23 @@ const authSlice = createSlice({
         state.error = null;
       })
 
+      .addCase(fetchProfile.pending, (state) => {
+        state.isLoading = true;
+      })
       .addCase(fetchProfile.fulfilled, (state, action) => {
+        state.isLoading = false;
         const data = action.payload?.data || action.payload;
-        if (data) state.user = data;
+        if (data) {
+          state.user = data;
+          state.role = data.roleName || state.role;
+          state.isAuthenticated = true;
+        }
+      })
+      .addCase(fetchProfile.rejected, (state) => {
+        // Token invalid — clear auth state
+        state.isLoading = false;
+        state.isAuthenticated = false;
+        state.token = null;
       });
   },
 });

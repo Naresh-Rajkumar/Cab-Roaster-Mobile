@@ -15,7 +15,7 @@ export const USE_MOCK = false;
 // NOTE: Expo on a physical device cannot resolve 'localhost'.
 // Always use the actual LAN IP of the machine running the backend.
 export const API_BASE_URL = __DEV__
-  ? 'http://localhost:4001/api/v1'
+  ? 'http://192.168.1.3:4001/api/v1'
   : 'https://api.vcommute.com/api/v1';
 
 // Simulated network delay range (ms) — realistic UX while mocking

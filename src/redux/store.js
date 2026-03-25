@@ -4,6 +4,7 @@ import employeeReducer from './slices/employeeSlice';
 import tripReducer from './slices/tripSlice';
 import appReducer from './slices/appSlice';
 import driverReducer from './slices/driverSlice';
+import { injectStore } from '../services/axiosConfig';
 
 const store = configureStore({
   reducer: {
@@ -20,5 +21,8 @@ const store = configureStore({
       },
     }),
 });
+
+// Inject store into axios interceptor for 401 handling
+injectStore(store);
 
 export default store;
