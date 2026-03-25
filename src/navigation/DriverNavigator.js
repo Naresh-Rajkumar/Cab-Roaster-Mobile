@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
+import { useTrackingSocket } from '../hooks/useTrackingSocket';
 import { SCREENS } from '../constants';
 
 // Driver Screens
@@ -52,6 +53,9 @@ const TAB_ICONS = {
 const DriverNavigator = () => {
   const { theme } = useTheme();
   const colors = theme.colors;
+
+  // Connect socket at app level for real-time notifications
+  useTrackingSocket();
 
   return (
     <Tab.Navigator
