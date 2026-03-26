@@ -9,17 +9,14 @@ import axiosInstance from '../axiosConfig';
 
 const realDriverService = {
   getDailyStats: () => axiosInstance.get('/dashboard/stats'),
-  getNextTrip: () => axiosInstance.get('/trips', { params: { status: 'Upcoming', limit: 1 } }),
-  getActiveTrip: () => axiosInstance.get('/trips', { params: { status: 'in_progress', limit: 1 } }),
-  getUpcomingTrips: () => axiosInstance.get('/trips', { params: { status: 'Upcoming' } }),
+  getNextTrip: () => axiosInstance.get('/trips/my-trips', { params: { status: 'Upcoming', limit: 1 } }),
+  getActiveTrip: () => axiosInstance.get('/trips/my-trips', { params: { status: 'in_progress', limit: 1 } }),
+  getUpcomingTrips: () => axiosInstance.get('/trips/my-trips', { params: { status: 'Upcoming' } }),
   startTrip: (tripId) => axiosInstance.post(`/trips/${tripId}/start`),
   endTrip: (tripId) => axiosInstance.post(`/trips/${tripId}/complete`),
-  // arriveAtStop is the real BE endpoint; tripId required
   arriveAtStop: (tripId, stopId) => axiosInstance.post(`/trips/${tripId}/stops/${stopId}/arrive`),
-  // updateStopHandoff maps to arriveAtStop — tripId must be provided
   updateStopHandoff: (tripId, stopId) => axiosInstance.post(`/trips/${tripId}/stops/${stopId}/arrive`),
-  getTripHistory: () => axiosInstance.get('/trips', { params: { status: 'Completed' } }),
-  // saveTripData has no dedicated BE endpoint; resolves immediately (state cleanup only)
+  getTripHistory: () => axiosInstance.get('/trips/my-trips', { params: { status: 'Completed' } }),
   saveTripData: () => Promise.resolve({ data: { success: true } }),
 };
 

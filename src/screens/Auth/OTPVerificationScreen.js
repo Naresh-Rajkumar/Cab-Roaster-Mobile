@@ -36,11 +36,16 @@ const ERROR      = '#dc2626';
 const OTP_LENGTH = 6;
 
 const OTPVerificationScreen = ({ navigation, route }) => {
-  const { phone } = route.params || {};
+  const { phone, devOtp } = route.params || {};
   const dispatch = useDispatch();
   const { isLoading, error } = useSelector((state) => state.auth);
 
-  const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
+  // Pre-fill OTP boxes when backend returns devOtp (NODE_ENV=development only)
+  const [otp, setOtp] = useState(() =>
+    devOtp && String(devOtp).length === OTP_LENGTH
+      ? String(devOtp).split('')
+      : Array(OTP_LENGTH).fill('')
+  );
   const inputRefs = useRef([]);
 
   const handleOtpChange = (value, index) => {
@@ -92,6 +97,13 @@ const OTPVerificationScreen = ({ navigation, route }) => {
           <Text style={styles.subtitle}>
             {"We've sent a code to your phone. Enter it below."}
           </Text>
+
+          {/* Dev OTP banner (visible only when backend returns devOtp) */}
+          {devOtp ? (
+            <View style={styles.devBanner}>
+              <Text style={styles.devBannerText}>🛠 Dev OTP auto-filled: {devOtp}</Text>
+            </View>
+          ) : null}
 
           {/* Phone + edit */}
           <View style={styles.phoneRow}>
@@ -237,6 +249,18 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { backgroundColor: '#B9C0C9' },
   btnText: { color: WHITE, fontSize: 16, fontWeight: '700' },
+
+  // Dev OTP banner
+  devBanner: {
+    backgroundColor: '#fff8e1',
+    borderWidth: 1,
+    borderColor: '#ffc107',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 16,
+  },
+  devBannerText: { fontSize: 12, color: '#7a5c00', fontWeight: '600' },
 
   // Resend
   resendRow: { flexDirection: 'row', alignItems: 'center' },

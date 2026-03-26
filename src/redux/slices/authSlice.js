@@ -163,11 +163,13 @@ const authSlice = createSlice({
         // Use roleName (lowercase: "employee", "driver") not role (display: "Employee", "Driver")
         state.role = data?.user?.roleName || state.pendingRole || 'employee';
         state.isAuthenticated = !!(data?.accessToken);
-        // Employee without empCode/employeeId needs onboarding (no employee record yet)
+        // Show onboarding only if: not a driver, has no active trips, AND profile is incomplete
         const role = state.role;
         const user = data?.user;
-        if (role !== 'driver' && user && !user.empCode && !user.employeeId && !user.empId) {
-          state.needsOnboarding = true;
+        if (role !== 'driver' && user) {
+          const hasTrips = user.hasActiveTrips === true;
+          const profileComplete = !!(user.homeAddress && user.shiftId);
+          state.needsOnboarding = !hasTrips && !profileComplete;
         }
       })
       .addCase(loginUser.rejected, (state, action) => {
@@ -188,8 +190,10 @@ const authSlice = createSlice({
         state.isAuthenticated = !!(data?.accessToken);
         const role = state.role;
         const user = data?.user;
-        if (role !== 'driver' && user && !user.empCode && !user.employeeId && !user.empId) {
-          state.needsOnboarding = true;
+        if (role !== 'driver' && user) {
+          const hasTrips = user.hasActiveTrips === true;
+          const profileComplete = !!(user.homeAddress && user.shiftId);
+          state.needsOnboarding = !hasTrips && !profileComplete;
         }
       })
       .addCase(verifyOTP.rejected, (state, action) => {

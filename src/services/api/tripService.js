@@ -8,21 +8,20 @@ import { mockTripService } from '../mock/mockTripService';
 import axiosInstance from '../axiosConfig';
 
 const realTripService = {
-  // BE QueryTripDto accepts: page, limit, search, status, date, driver, route
+  // Employee/Driver: uses /trips/my-trips (scoped to logged-in user)
   // status values: 'On time', 'Delayed', 'Upcoming', 'Completed', 'Cancelled'
   getTrips: (params) => {
-    // Strip 'type' param (not accepted by BE) and map status values
     const { type, ...beParams } = params || {};
-    return axiosInstance.get('/trips', { params: beParams });
+    return axiosInstance.get('/trips/my-trips', { params: beParams });
   },
   getTripDetails: (tripId) => axiosInstance.get(`/trips/${tripId}`),
   getTripStops: (tripId) => axiosInstance.get(`/trips/${tripId}/stops`),
   startTrip: (tripId) => axiosInstance.post(`/trips/${tripId}/start`),
   completeTrip: (tripId) => axiosInstance.post(`/trips/${tripId}/complete`),
   arriveAtStop: (tripId, stopId) => axiosInstance.post(`/trips/${tripId}/stops/${stopId}/arrive`),
-  getNextTrip: () => axiosInstance.get('/trips', { params: { status: 'Upcoming', limit: 1 } }),
+  getNextTrip: () => axiosInstance.get('/trips/my-trips', { params: { status: 'Upcoming', limit: 1 } }),
   // Returns the employee's currently active trip (driver has started it)
-  getMyCurrentRide: () => axiosInstance.get('/trips', { params: { status: 'in_progress', limit: 1 } }),
+  getMyCurrentRide: () => axiosInstance.get('/trips/my-trips', { params: { status: 'in_progress', limit: 1 } }),
 };
 
 export const tripService = USE_MOCK ? mockTripService : realTripService;

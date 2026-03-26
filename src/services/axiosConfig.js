@@ -14,6 +14,7 @@ const axiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    'X-Device-Type': 'mobile',
   },
 });
 

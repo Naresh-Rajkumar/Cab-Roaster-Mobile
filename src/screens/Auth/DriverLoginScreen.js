@@ -50,15 +50,9 @@ const DriverLoginScreen = ({ navigation }) => {
     }
     // Show OTP in Alert when backend returns devOtp (only in NODE_ENV=development)
     // Remove __DEV__ guard — some Expo build modes set __DEV__=false even in dev
-    if (result.payload?.devOtp) {
-      Alert.alert(
-        'Dev OTP',
-        `Your OTP is: ${result.payload.devOtp}`,
-        [{ text: 'OK', onPress: () => navigation.navigate(SCREENS.OTP_VERIFICATION, { phone: fullPhone }) }]
-      );
-    } else {
-      navigation.navigate(SCREENS.OTP_VERIFICATION, { phone: fullPhone });
-    }
+    const devOtp = result.payload?.devOtp ?? null;
+    console.log('[DriverLogin] devOtp:', devOtp);
+    navigation.navigate(SCREENS.OTP_VERIFICATION, { phone: fullPhone, devOtp });
   };
 
   return (
