@@ -6,7 +6,7 @@
  * For employee role: verifyOTP thunk calls POST /auth/employee-login (password-based).
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
@@ -25,28 +26,45 @@ import { verifyOTP, sendOtp } from '../../redux/slices/authSlice';
 // ─── Design tokens (exact from Figma 553:12387) ───────────────────────────────
 const PRIMARY    = '#643ee8';
 const BG         = '#F5F4F9';
-const TEXT       = '#312E3A';
+const TEXT_COLOR = '#312E3A';
 const TEXT_SEC   = '#5E5C66';
 const WHITE      = '#ffffff';
 const BOX_BORDER = '#D2C5FF';
+const ERROR      = '#dc2626';
 const BRAND_RED  = '#EE001D';
 const BRAND_GRY  = '#4A4A4A';
-const ERROR      = '#dc2626';
 
 const OTP_LENGTH = 6;
+const RESEND_COOLDOWN = 60; // seconds
 
 const OTPVerificationScreen = ({ navigation, route }) => {
-  const { phone, devOtp } = route.params || {};
+  const { phone, retryAfter } = route.params || {};
   const dispatch = useDispatch();
   const { isLoading, error } = useSelector((state) => state.auth);
 
-  // Pre-fill OTP boxes when backend returns devOtp (NODE_ENV=development only)
-  const [otp, setOtp] = useState(() =>
-    devOtp && String(devOtp).length === OTP_LENGTH
-      ? String(devOtp).split('')
-      : Array(OTP_LENGTH).fill('')
-  );
+  const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
+  const [resendTimer, setResendTimer] = useState(retryAfter || RESEND_COOLDOWN);
+  const [isResending, setIsResending] = useState(false);
   const inputRefs = useRef([]);
+  const timerRef = useRef(null);
+
+  // Start countdown timer
+  useEffect(() => {
+    if (resendTimer > 0) {
+      timerRef.current = setInterval(() => {
+        setResendTimer((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [resendTimer > 0]); // restart when timer resets
 
   const handleOtpChange = (value, index) => {
     const cleaned = value.replace(/[^0-9]/g, '');
@@ -70,13 +88,32 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     dispatch(verifyOTP({ phone, otp: code }));
   };
 
-  const handleResend = () => {
-    if (phone) {
-      dispatch(sendOtp(phone));
+  const handleResend = useCallback(async () => {
+    if (resendTimer > 0 || !phone || isResending) return;
+    setIsResending(true);
+    const result = await dispatch(sendOtp(phone));
+    setIsResending(false);
+
+    if (sendOtp.rejected.match(result)) {
+      Alert.alert('Error', result.payload || 'Failed to resend OTP');
+      return;
     }
+
+    // Reset OTP boxes and restart timer
+    setOtp(Array(OTP_LENGTH).fill(''));
+    const newRetryAfter = result.payload?.retryAfter ?? RESEND_COOLDOWN;
+    setResendTimer(newRetryAfter);
+    inputRefs.current[0]?.focus();
+  }, [resendTimer, phone, isResending, dispatch]);
+
+  const formatTimer = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${s}s`;
   };
 
   const isComplete = otp.every((d) => d !== '');
+  const canResend = resendTimer === 0 && !isResending;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -95,21 +132,14 @@ const OTPVerificationScreen = ({ navigation, route }) => {
           {/* Title */}
           <Text style={styles.title}>Verification Code</Text>
           <Text style={styles.subtitle}>
-            {"We've sent a code to your phone. Enter it below."}
+            {"We've sent a 6-digit code to your phone number."}
           </Text>
-
-          {/* Dev OTP banner (visible only when backend returns devOtp) */}
-          {devOtp ? (
-            <View style={styles.devBanner}>
-              <Text style={styles.devBannerText}>🛠 Dev OTP auto-filled: {devOtp}</Text>
-            </View>
-          ) : null}
 
           {/* Phone + edit */}
           <View style={styles.phoneRow}>
             <Text style={styles.phoneText}>{phone}</Text>
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.editBtn}>
-              <Ionicons name="pencil-outline" size={18} color={TEXT} />
+              <Ionicons name="pencil-outline" size={18} color={TEXT_COLOR} />
             </TouchableOpacity>
           </View>
 
@@ -150,12 +180,18 @@ const OTPVerificationScreen = ({ navigation, route }) => {
             )}
           </TouchableOpacity>
 
-          {/* Resend */}
+          {/* Resend with timer */}
           <View style={styles.resendRow}>
             <Text style={styles.resendText}>Didn't receive code? </Text>
-            <TouchableOpacity onPress={handleResend} disabled={isLoading}>
-              <Text style={styles.resendLink}>Resend</Text>
-            </TouchableOpacity>
+            {canResend ? (
+              <TouchableOpacity onPress={handleResend}>
+                <Text style={styles.resendLink}>Resend OTP</Text>
+              </TouchableOpacity>
+            ) : isResending ? (
+              <ActivityIndicator size="small" color={PRIMARY} />
+            ) : (
+              <Text style={styles.resendTimer}>Resend in {formatTimer(resendTimer)}</Text>
+            )}
           </View>
 
         </View>
@@ -187,7 +223,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '700',
-    color: TEXT,
+    color: TEXT_COLOR,
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -206,7 +242,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 24,
   },
-  phoneText: { fontSize: 16, fontWeight: '500', color: TEXT },
+  phoneText: { fontSize: 16, fontWeight: '500', color: TEXT_COLOR },
   editBtn: { padding: 4 },
 
   // OTP boxes — Figma: 47×50, radius=8, border #D2C5FF
@@ -224,7 +260,7 @@ const styles = StyleSheet.create({
     backgroundColor: WHITE,
     fontSize: 20,
     fontWeight: '700',
-    color: TEXT,
+    color: TEXT_COLOR,
   },
   otpBoxFilled: {
     borderColor: PRIMARY,
@@ -250,22 +286,11 @@ const styles = StyleSheet.create({
   btnDisabled: { backgroundColor: '#B9C0C9' },
   btnText: { color: WHITE, fontSize: 16, fontWeight: '700' },
 
-  // Dev OTP banner
-  devBanner: {
-    backgroundColor: '#fff8e1',
-    borderWidth: 1,
-    borderColor: '#ffc107',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginBottom: 16,
-  },
-  devBannerText: { fontSize: 12, color: '#7a5c00', fontWeight: '600' },
-
   // Resend
   resendRow: { flexDirection: 'row', alignItems: 'center' },
   resendText: { fontSize: 14, color: TEXT_SEC },
   resendLink: { fontSize: 14, fontWeight: '600', color: PRIMARY },
+  resendTimer: { fontSize: 14, fontWeight: '600', color: TEXT_SEC },
 });
 
 export default OTPVerificationScreen;

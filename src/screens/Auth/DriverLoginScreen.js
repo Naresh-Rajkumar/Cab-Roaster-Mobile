@@ -39,20 +39,21 @@ const DriverLoginScreen = ({ navigation }) => {
 
   const isValid = phone.replace(/\D/g, '').length === 10;
 
+  const [isSending, setIsSending] = useState(false);
+
   const handleSendOTP = async () => {
-    if (!isValid) return;
+    if (!isValid || isSending) return;
+    setIsSending(true);
     const fullPhone = `+91-${phone.replace(/\D/g, '')}`;
     dispatch(setPendingRole('driver'));
     const result = await dispatch(sendOtp(fullPhone));
+    setIsSending(false);
     if (sendOtp.rejected.match(result)) {
       Alert.alert('Error', result.payload || 'Failed to send OTP');
       return;
     }
-    // Show OTP in Alert when backend returns devOtp (only in NODE_ENV=development)
-    // Remove __DEV__ guard — some Expo build modes set __DEV__=false even in dev
-    const devOtp = result.payload?.devOtp ?? null;
-    console.log('[DriverLogin] devOtp:', devOtp);
-    navigation.navigate(SCREENS.OTP_VERIFICATION, { phone: fullPhone, devOtp });
+    const retryAfter = result.payload?.retryAfter ?? 60;
+    navigation.navigate(SCREENS.OTP_VERIFICATION, { phone: fullPhone, retryAfter });
   };
 
   return (
@@ -112,7 +113,7 @@ const DriverLoginScreen = ({ navigation }) => {
             style={[styles.btn, !isValid && styles.btnDisabled]}
             onPress={handleSendOTP}
             activeOpacity={0.85}
-            disabled={!isValid || isLoading}
+            disabled={!isValid || isLoading || isSending}
           >
             {isLoading ? (
               <ActivityIndicator color={WHITE} />

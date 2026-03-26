@@ -54,19 +54,13 @@ export const sendOtp = createAsyncThunk(
   }
 );
 
-// verifyOTP — for driver role uses the dedicated /auth/verify-otp endpoint;
-// for employee role falls back to /auth/employee-login with password.
+// verifyOTP — uses POST /auth/verify-otp for both driver and employee OTP flows.
+// Microsoft SSO uses a separate flow (loginWithMicrosoft thunk).
 export const verifyOTP = createAsyncThunk(
   'auth/verifyOTP',
-  async ({ phone, otp }, { getState, rejectWithValue }) => {
+  async ({ phone, otp }, { rejectWithValue }) => {
     try {
-      const role = getState().auth.pendingRole || 'employee';
-      let response;
-      if (role === 'driver') {
-        response = await authService.verifyOtpCode(phone, otp);
-      } else {
-        response = await authService.login({ phone, password: otp, role });
-      }
+      const response = await authService.verifyOtpCode(phone, otp);
       const token = response.data?.data?.accessToken;
       if (token) {
         setAuthToken(token);
