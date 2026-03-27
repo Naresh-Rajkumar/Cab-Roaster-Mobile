@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fetchCurrentRide, fetchTrips } from '../../redux/slices/tripSlice';
-import { Avatar, StatusBadge } from '../../components';
+import { Avatar, StatusBadge, CrossPlatformMap } from '../../components';
 import { SCREENS } from '../../constants';
 import { getGreeting } from '../../utils';
 
@@ -38,28 +38,29 @@ const QUICK_ACTIONS = [
 ];
 
 
-// ─── Map Placeholder ──────────────────────────────────────────────────────────
-const MapPlaceholder = ({ colors }) => (
-  <View style={[styles.mapPlaceholder, { backgroundColor: '#e8eaed' }]}>
-    {/* Simulated map roads */}
-    <View style={styles.mapRoadH} />
-    <View style={styles.mapRoadV} />
-    {/* Route line */}
-    <View style={styles.mapRouteLine} />
-    {/* Pickup dot */}
-    <View style={[styles.mapDotPickup, { backgroundColor: '#16a34a', borderColor: '#fff' }]} />
-    {/* Car icon */}
-    <View style={[styles.mapCarBox, { backgroundColor: colors.primaryContainer, borderColor: colors.primary }]}>
-      <Ionicons name="car" size={14} color={colors.primary} />
+// ─── Mini Map ─────────────────────────────────────────────────────────────────
+const MiniMap = ({ ride }) => {
+  // Extract stop coordinates from ride data for map markers
+  const stopName = ride?.pickupStop ?? ride?.nextStop ?? ride?.route ?? '';
+  const defaultRegion = { latitude: 12.9716, longitude: 80.2209, latitudeDelta: 0.04, longitudeDelta: 0.04 };
+
+  return (
+    <View style={styles.mapPlaceholder}>
+      <CrossPlatformMap
+        style={{ flex: 1, borderRadius: 12 }}
+        region={defaultRegion}
+        markers={stopName ? [{
+          id: 'pickup',
+          latitude: 12.9716,
+          longitude: 80.2209,
+          title: stopName,
+          color: '#643ee8',
+          label: '●',
+        }] : []}
+      />
     </View>
-    {/* Destination dot */}
-    <View style={[styles.mapDotDest, { backgroundColor: colors.primary, borderColor: '#fff' }]} />
-    {/* Location label */}
-    <View style={[styles.mapLabel, { backgroundColor: '#fff' }]}>
-      <Text style={styles.mapLabelText}>Karapakkam</Text>
-    </View>
-  </View>
-);
+  );
+};
 
 // ─── Today's Ride Card ────────────────────────────────────────────────────────
 const TodayRideCard = ({ currentRide, colors, onTrack }) => {
@@ -80,7 +81,7 @@ const TodayRideCard = ({ currentRide, colors, onTrack }) => {
   return (
     <View style={[styles.rideCard, { backgroundColor: colors.surface }]}>
       {/* Map thumbnail */}
-      <MapPlaceholder colors={colors} />
+      <MiniMap ride={currentRide} />
 
       {/* Route */}
       <View style={styles.routeBlock}>

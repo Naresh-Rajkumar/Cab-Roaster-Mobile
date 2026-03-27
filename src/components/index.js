@@ -9,6 +9,9 @@ export { default as Loader } from './common/Loader/Loader';
 export { default as EmptyState } from './common/EmptyState/EmptyState';
 export { default as Modal } from './common/Modal/Modal';
 
+// Map
+export { default as CrossPlatformMap } from './common/CrossPlatformMap';
+
 // Item Components
 export { default as TripItem } from './items/TripItem/TripItem';
 export { default as EmployeeListItem } from './items/EmployeeListItem/EmployeeListItem';

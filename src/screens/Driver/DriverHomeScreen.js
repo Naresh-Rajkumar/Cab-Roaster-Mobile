@@ -93,7 +93,10 @@ export default function DriverHomeScreen({ navigation }) {
   const colors = theme.colors;
   const dispatch = useDispatch();
   const [refreshing, setRefreshing] = useState(false);
-  const driverName = useSelector((state) => state.auth?.user?.displayName || state.auth?.user?.firstName || 'Driver');
+  const driverName = useSelector((state) => {
+    const u = state.auth?.user;
+    return u?.displayName || u?.name || u?.firstName || [u?.first_name, u?.last_name].filter(Boolean).join(' ') || 'Driver';
+  });
   const totalTrips = useSelector((state) => state.driver.totalTrips);
   const totalPickups = useSelector((state) => state.driver.totalPickups);
   const nextTrip = useSelector((state) => state.driver.nextTrip);

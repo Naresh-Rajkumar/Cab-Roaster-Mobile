@@ -18,11 +18,10 @@ import {
   ScrollView,
   Dimensions,
 } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Avatar } from '../../components';
+import { Avatar, CrossPlatformMap } from '../../components';
 import { SCREENS } from '../../constants';
 import { fetchCurrentRide, fetchTripStops } from '../../redux/slices/tripSlice';
 import { useTrackingSocket } from '../../hooks/useTrackingSocket';
@@ -47,39 +46,18 @@ function stopDisplay(status) {
 }
 
 // ─── Live Map Component ───────────────────────────────────────────────────────
-const LiveMap = ({ cabLocation, trail, mapStatus, colors, mapRef }) => (
+const LiveMap = ({ cabLocation, trail, mapStatus, colors }) => (
   <View style={styles.mapView}>
-    <MapView
-      ref={mapRef}
+    <CrossPlatformMap
       style={StyleSheet.absoluteFillObject}
-      initialRegion={DEFAULT_REGION}
-      showsUserLocation={false}
-      showsMyLocationButton={false}
-      showsCompass={false}
-      toolbarEnabled={false}
-    >
-      {/* GPS trail polyline */}
-      {trail.length > 1 && (
-        <Polyline
-          coordinates={trail}
-          strokeColor={colors.primary}
-          strokeWidth={3}
-          lineDashPattern={[8, 4]}
-        />
-      )}
-
-      {/* Cab marker */}
-      {cabLocation && (
-        <Marker
-          coordinate={{ latitude: cabLocation.latitude, longitude: cabLocation.longitude }}
-          anchor={{ x: 0.5, y: 0.5 }}
-        >
-          <View style={[styles.cabMarker, { backgroundColor: colors.primaryContainer, borderColor: colors.primary }]}>
-            <Ionicons name="car" size={18} color={colors.primary} />
-          </View>
-        </Marker>
-      )}
-    </MapView>
+      region={cabLocation
+        ? { latitude: cabLocation.latitude, longitude: cabLocation.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 }
+        : DEFAULT_REGION
+      }
+      driverLocation={cabLocation}
+      polyline={trail}
+      markers={[]}
+    />
 
     {/* Map status badge */}
     <View style={styles.statusBadgeContainer}>

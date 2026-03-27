@@ -13,9 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
-import MapView, { Marker, Polyline } from 'react-native-maps';
 import { useTheme } from '../../theme/ThemeProvider';
-import { StatusBadge, Avatar } from '../../components';
+import { StatusBadge, Avatar, CrossPlatformMap } from '../../components';
 import { SCREENS, TRIP_STATUS } from '../../constants';
 import { fetchTripStops } from '../../redux/slices/tripSlice';
 import { startTrip, endTrip } from '../../redux/slices/driverSlice';
@@ -235,53 +234,23 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
 
       {/* ── Live Map ── */}
       <View style={styles.mapContainer}>
-        <MapView
+        <CrossPlatformMap
           style={styles.map}
           region={
             location
-              ? {
-                  latitude: location.latitude,
-                  longitude: location.longitude,
-                  latitudeDelta: 0.02,
-                  longitudeDelta: 0.02,
-                }
+              ? { latitude: location.latitude, longitude: location.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 }
               : DEFAULT_REGION
           }
-          showsUserLocation={false}
-          showsMyLocationButton={false}
-        >
-          {/* Driver position marker */}
-          {location && (
-            <Marker
-              coordinate={{ latitude: location.latitude, longitude: location.longitude }}
-              title="You"
-            >
-              <View style={styles.driverMarker}>
-                <Ionicons name="car" size={14} color="#fff" />
-              </View>
-            </Marker>
-          )}
-
-          {/* Stop markers */}
-          {stops.map((stop, idx) => {
-            if (!stop.latitude || !stop.longitude) return null;
-            const isCompleted = stop.status === 'completed';
-            const isNext = stop.status === 'next_stop';
-            return (
-              <Marker
-                key={stop.id}
-                coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
-                title={stop.name}
-              >
-                <View style={[styles.stopMarker, {
-                  backgroundColor: isCompleted ? '#16a34a' : isNext ? colors.primary : '#9e9aa8',
-                }]}>
-                  <Text style={styles.stopMarkerText}>{idx + 1}</Text>
-                </View>
-              </Marker>
-            );
-          })}
-        </MapView>
+          driverLocation={location}
+          markers={stops.filter(s => s.latitude && s.longitude).map((stop, idx) => ({
+            id: stop.id,
+            latitude: stop.latitude,
+            longitude: stop.longitude,
+            title: stop.name,
+            label: String(idx + 1),
+            color: stop.status === 'completed' ? '#16a34a' : stop.status === 'next_stop' ? '#643ee8' : '#9e9aa8',
+          }))}
+        />
 
         {/* SOS overlay on map */}
         <TouchableOpacity style={styles.sosOverlay} activeOpacity={0.8}>
