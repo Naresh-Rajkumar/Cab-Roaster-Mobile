@@ -80,7 +80,7 @@ const LogoutModal = ({ visible, onConfirm, onCancel, colors }) => (
   </Modal>
 );
 
-const DriverProfileScreen = () => {
+const DriverProfileScreen = ({ navigation }) => {
   const { theme, toggleTheme, isDarkMode } = useTheme();
   const colors = theme.colors;
   const dispatch = useDispatch();
@@ -108,7 +108,7 @@ const DriverProfileScreen = () => {
               <Text style={[styles.driverBadgeText, { color: '#16a34a' }]}>Driver</Text>
             </View>
           </View>
-          <TouchableOpacity style={[styles.editBtn, { borderColor: colors.border }]}>
+          <TouchableOpacity style={[styles.editBtn, { borderColor: colors.border }]} onPress={() => navigation.navigate('EditProfile')}>
             <Text style={[styles.editBtnText, { color: colors.primary }]}>Edit</Text>
           </TouchableOpacity>
         </View>

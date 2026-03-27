@@ -241,8 +241,14 @@ export default function DriverHomeScreen({ navigation }) {
               </View>
             </View>
           ) : (
-            <View style={[styles.nextTripCard, { backgroundColor: colors.card, alignItems: 'center', padding: 24 }]}>
-              <Text style={{ color: colors.textSecondary }}>No upcoming trips</Text>
+            <View style={[styles.nextTripCard, { backgroundColor: colors.card, alignItems: 'center', paddingVertical: 32 }]}>
+              <Ionicons name="checkmark-circle-outline" size={48} color="#16a34a" />
+              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', marginTop: 12 }}>
+                {totalTrips > 0 ? 'All trips completed!' : 'No trips scheduled'}
+              </Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, textAlign: 'center' }}>
+                {totalTrips > 0 ? `You completed ${totalTrips} trip${totalTrips > 1 ? 's' : ''} today.` : 'No trips assigned for today.'}
+              </Text>
             </View>
           )}
         </View>

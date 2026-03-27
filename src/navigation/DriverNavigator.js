@@ -14,6 +14,7 @@ import NotificationsScreen from '../screens/Trips/NotificationsScreen';
 import TripSummaryScreen from '../screens/Driver/TripSummaryScreen';
 import AttendanceScreen from '../screens/Driver/AttendanceScreen';
 import DriverProfileScreen from '../screens/Driver/DriverProfileScreen';
+import EditProfileScreen from '../screens/Profile/EditProfileScreen';
 import RequestCabStep1Screen from '../screens/Requests/RequestCabStep1Screen';
 import RequestCabStep2Screen from '../screens/Requests/RequestCabStep2Screen';
 
@@ -32,6 +33,7 @@ const DriverHomeStack = () => (
 const DriverMoreStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name={SCREENS.DRIVER_MORE} component={DriverProfileScreen} />
+    <Stack.Screen name={SCREENS.EDIT_PROFILE} component={EditProfileScreen} />
     <Stack.Screen name={SCREENS.REQUEST_CAB_STEP1} component={RequestCabStep1Screen} />
     <Stack.Screen name={SCREENS.REQUEST_CAB_STEP2} component={RequestCabStep2Screen} />
   </Stack.Navigator>

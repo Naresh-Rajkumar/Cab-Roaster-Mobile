@@ -194,7 +194,17 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
   };
 
   const handleConfirmAttendance = (stop) => {
-    navigation.navigate(SCREENS.ATTENDANCE, { stop, tripId });
+    if (!tripId || !stop.id) return;
+    // Call arrive-at-stop API, then refresh stops
+    import('../../services/api/tripService').then(({ tripService }) => {
+      tripService.arriveAtStop(tripId, stop.id)
+        .then(() => {
+          dispatch(fetchTripStops(tripId));
+        })
+        .catch((err) => {
+          Alert.alert('Error', err?.response?.data?.message || 'Failed to confirm arrival');
+        });
+    });
   };
 
   const handleEndTrip = () => {

@@ -6,6 +6,7 @@ import HomeNavigator from './HomeNavigator';
 import TripsScreen from '../screens/Trips/TripsScreen';
 import NotificationsScreen from '../screens/Trips/NotificationsScreen';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
+import EditProfileScreen from '../screens/Profile/EditProfileScreen';
 import TripDetailsScreen from '../screens/Employee/TripDetailsScreen';
 import RideDetailsScreen from '../screens/Employee/RideDetailsScreen';
 import LiveTrackingScreen from '../screens/Tracking/LiveTrackingScreen';
@@ -51,6 +52,7 @@ const TripsNavigator = () => (
 const MoreNavigator = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name={SCREENS.MORE_DETAILS} component={ProfileScreen} />
+    <Stack.Screen name={SCREENS.EDIT_PROFILE} component={EditProfileScreen} />
     <Stack.Screen name={SCREENS.REQUEST_CAB_STEP1} component={RequestCabStep1Screen} />
     <Stack.Screen name={SCREENS.REQUEST_CAB_STEP2} component={RequestCabStep2Screen} />
   </Stack.Navigator>

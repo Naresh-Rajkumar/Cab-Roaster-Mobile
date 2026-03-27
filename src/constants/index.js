@@ -99,6 +99,7 @@ export const SCREENS = {
   DRIVER_MORE: 'DriverMore',
   TRIP_SUMMARY: 'TripSummary',
   ATTENDANCE: 'Attendance',
+  EDIT_PROFILE: 'EditProfile',
 };
 
 export const DATE_FORMATS = {

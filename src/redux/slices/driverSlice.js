@@ -37,16 +37,21 @@ function normalizeTripForDriver(trip) {
   const vehicleType = trip.vehicleType ?? trip.cab?.type ?? trip.cabType ?? '';
   const status = trip.status ?? 'scheduled';
 
+  // First stop name from nextStop or passengerStops array
+  const firstStopName = trip.nextStop
+    ?? (Array.isArray(trip.passengerStops) && trip.passengerStops.length > 0 ? trip.passengerStops[0] : '')
+    ?? trip.startLocation ?? '';
+
   // Pickup: prefer pre-built object, fall back to flat BE fields
   const pickup = trip.pickup ?? {
-    name: trip.startLocation ?? trip.route?.routeName ?? trip.pickupLocation ?? '',
+    name: firstStopName,
     time: formatTime(trip.scheduledStart ?? trip.startTime),
     employeeCount: trip.employeeCount ?? trip.passengerCount ?? trip.passengers?.length ?? 0,
   };
 
-  // Destination: prefer pre-built object, fall back to flat BE fields
+  // Destination: route name or work location
   const destination = trip.destination ?? {
-    name: trip.endLocation ?? trip.workLocation?.name ?? trip.dropLocation ?? '',
+    name: trip.route ?? trip.endLocation ?? trip.workLocation?.name ?? '',
     eta: formatTime(trip.scheduledEnd ?? trip.endTime ?? trip.estimatedArrival),
   };
 
@@ -139,14 +144,33 @@ export const endTrip = createAsyncThunk(
   'driver/endTrip',
   async ({ tripId }, { rejectWithValue }) => {
     try {
-      const response = await driverService.endTrip(tripId);
-      const data = unwrap(response) ?? response?.data ?? {};
+      await driverService.endTrip(tripId);
+
+      // Fetch trip detail after completion for summary screen
+      let summary = null;
+      try {
+        const { tripService } = require('../../services/api/tripService');
+        const detailRes = await tripService.getTripDetails(tripId);
+        const detail = unwrap(detailRes);
+        if (detail) {
+          summary = {
+            tripNumber: detail.tripNumber ?? detail.slug ?? tripId,
+            vehicle: detail.vehicle ?? detail.cabNumber ?? '',
+            vehicleType: detail.vehicleType ?? '',
+            startedAt: detail.actualStart ?? detail.scheduledStart ?? '',
+            endedAt: detail.actualEnd ?? new Date().toISOString(),
+            totalPickups: detail.passengerCount ?? detail.passengers?.length ?? 0,
+            totalStops: detail.stops?.length ?? detail.stopCount ?? 0,
+            totalDistance: detail.distance ?? '',
+          };
+        }
+      } catch { /* ignore — summary is best-effort */ }
+
       return {
         tripId,
         status: 'completed',
-        endedAt: data?.endedAt ?? data?.completedAt ?? new Date().toISOString(),
-        // summary may be returned if BE includes it
-        summary: data?.summary ?? data ?? null,
+        endedAt: new Date().toISOString(),
+        summary,
       };
     } catch (error) {
       return rejectWithValue(

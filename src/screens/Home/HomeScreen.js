@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Modal,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +17,7 @@ import { fetchCurrentRide, fetchTrips } from '../../redux/slices/tripSlice';
 import { Avatar, StatusBadge, CrossPlatformMap } from '../../components';
 import { SCREENS } from '../../constants';
 import { getGreeting } from '../../utils';
+import { useTrackingSocket } from '../../hooks/useTrackingSocket';
 
 const QUICK_ACTIONS = [
   {
@@ -237,6 +240,23 @@ const HomeScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
 
   const firstName = user?.firstName ?? user?.displayName?.split(' ')[0] ?? user?.name?.split(' ')[0] ?? 'Guest';
+  const [cabArrivedData, setCabArrivedData] = useState(null);
+
+  // Listen for cab arrived notification via WebSocket
+  useTrackingSocket({
+    onNotification: useCallback((event) => {
+      if (event?.title?.toLowerCase().includes('arrived') || event?.title?.toLowerCase().includes('approaching')) {
+        setCabArrivedData({
+          driverName: currentRide?.driver?.name || 'Driver',
+          cabNumber: currentRide?.vehicle || '',
+          cabType: currentRide?.vehicleType || '',
+          stopName: event.body || 'your stop',
+        });
+      }
+      // Also refresh ride data on any notification
+      dispatch(fetchCurrentRide());
+    }, [currentRide, dispatch]),
+  });
 
   useEffect(() => {
     dispatch(fetchCurrentRide());
@@ -330,6 +350,65 @@ const HomeScreen = ({ navigation }) => {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Cab Arrived Bottom Sheet */}
+      <Modal
+        visible={!!cabArrivedData}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCabArrivedData(null)}
+      >
+        <View style={styles.cabArrivedOverlay}>
+          <TouchableOpacity style={styles.cabArrivedBackdrop} onPress={() => setCabArrivedData(null)} />
+          <View style={[styles.cabArrivedSheet, { backgroundColor: colors.surface }]}>
+            <View style={styles.cabArrivedHandle} />
+            <View style={styles.cabArrivedIcon}>
+              <View style={[styles.cabArrivedCircle, { backgroundColor: '#e8f6ed' }]}>
+                <Ionicons name="car" size={32} color="#16a34a" />
+              </View>
+            </View>
+            <Text style={[styles.cabArrivedTitle, { color: colors.text }]}>Your cab has arrived</Text>
+            <Text style={[styles.cabArrivedSub, { color: colors.textSecondary }]}>
+              {cabArrivedData?.cabNumber} • {cabArrivedData?.cabType}
+            </Text>
+
+            <View style={[styles.cabArrivedDriver, { backgroundColor: colors.background }]}>
+              <Avatar name={cabArrivedData?.driverName} size={40} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.cabDriverName, { color: colors.text }]}>{cabArrivedData?.driverName}</Text>
+                <Text style={[styles.cabDriverSub, { color: colors.textSecondary }]}>
+                  {cabArrivedData?.cabNumber} • {cabArrivedData?.cabType}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.callBtn, { backgroundColor: '#e8f6ed' }]}
+                onPress={() => Linking.openURL(`tel:${currentRide?.driver?.phone || ''}`)}
+              >
+                <Ionicons name="call" size={20} color="#16a34a" />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.cabArrivedBtn, { backgroundColor: '#16a34a' }]}
+              onPress={() => {
+                setCabArrivedData(null);
+                navigation.navigate(SCREENS.LIVE_TRACKING, { trip: currentRide });
+              }}
+            >
+              <Text style={styles.cabArrivedBtnText}>Yes, I Got In The Cab</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.cabArrivedSecondary]}
+              onPress={() => setCabArrivedData(null)}
+            >
+              <Text style={[styles.cabArrivedSecText, { color: colors.textSecondary }]}>
+                No, I Need The Cab
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -585,6 +664,66 @@ const styles = StyleSheet.create({
   activityText: { flex: 1 },
   activityTitle: { fontSize: 14, fontWeight: '600' },
   activitySub: { fontSize: 12, marginTop: 2 },
+
+  // Cab Arrived Bottom Sheet
+  cabArrivedOverlay: { flex: 1, justifyContent: 'flex-end' },
+  cabArrivedBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  cabArrivedSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingBottom: 34,
+    paddingTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  cabArrivedHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#d1d5db',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  cabArrivedIcon: { alignItems: 'center', marginBottom: 16 },
+  cabArrivedCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cabArrivedTitle: { fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  cabArrivedSub: { fontSize: 14, textAlign: 'center', marginTop: 4, marginBottom: 20 },
+  cabArrivedDriver: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 20,
+  },
+  cabDriverName: { fontSize: 15, fontWeight: '700' },
+  cabDriverSub: { fontSize: 12, marginTop: 2 },
+  callBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cabArrivedBtn: {
+    height: 54,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  cabArrivedBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  cabArrivedSecondary: { alignItems: 'center', paddingVertical: 10 },
+  cabArrivedSecText: { fontSize: 15, fontWeight: '600' },
 });
 
 export default HomeScreen;
