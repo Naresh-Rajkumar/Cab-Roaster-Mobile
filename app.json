@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "CAB-Native",
-    "slug": "CAB-Native",
+    "slug": "cab-roster",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -33,7 +33,8 @@
         "googleMaps": {
           "apiKey": ""
         }
-      }
+      },
+      "package": "com.naresh2208sorganization.cabroster"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -48,6 +49,12 @@
         }
       ],
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9f708c63-fee2-4680-be33-62355203d46e"
+      }
+    },
+    "owner": "naresh2208s-organization"
   }
 }

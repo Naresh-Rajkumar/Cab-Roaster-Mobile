@@ -10,6 +10,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## [Unreleased] - 2026-03-24
 
+### Config
+- **`EXPO_PUBLIC_API_BASE_URL`** — `src/config/env.js` reads this at build time so the app can use a public HTTPS API when the device is not on the same LAN as the dev machine (cellular / other Wi‑Fi / EAS APK). If unset, behavior falls back to the LAN `API_BASE_URL`. Added `.env.example` and ignored `.env` in `.gitignore`.
+- **`eas.json` preview profile** — `EXPO_PUBLIC_API_BASE_URL` set for ngrok-backed API testing (update when the tunnel URL changes).
+
 ### Changed — Real API Integration (Mock → NestJS Backend)
 
 #### Config & Setup

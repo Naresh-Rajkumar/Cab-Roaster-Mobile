@@ -4,6 +4,7 @@
  */
 import React, { useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
+import 'leaflet/dist/leaflet.css';
 
 // Leaflet CSS injection (runs once)
 let leafletCssInjected = false;

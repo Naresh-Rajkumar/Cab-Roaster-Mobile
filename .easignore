@@ -1,0 +1,11 @@
+# Smaller EAS upload archives (deps install on Expo servers)
+.git
+.idea
+.vscode
+*.log
+android/.gradle
+android/build
+android/app/build
+android/app/.cxx
+ios/Pods
+ios/build

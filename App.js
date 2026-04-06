@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect } from 'react';
-import { StatusBar, LogBox } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StatusBar, LogBox, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
 import * as SplashScreen from 'expo-splash-screen';
@@ -14,6 +14,9 @@ import { setAuthToken } from './src/services/axiosConfig';
 // Keep splash screen visible while loading fonts
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+// If expo-font never resolves (device/storage quirks), do not block the app forever on the splash.
+const FONT_READY_TIMEOUT_MS = 10000;
+
 // Suppress known harmless warnings
 LogBox.ignoreLogs([
   'Non-serializable values were found in the navigation state',
@@ -21,12 +24,26 @@ LogBox.ignoreLogs([
 
 const AppContent = () => {
   const { fontsLoaded, fontError } = useAppFonts();
+  const [fontWaitExceeded, setFontWaitExceeded] = useState(false);
 
-  const onLayoutRootView = useCallback(async () => {
-    if (fontsLoaded || fontError) {
+  useEffect(() => {
+    const t = setTimeout(() => setFontWaitExceeded(true), FONT_READY_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, []);
+
+  const fontsReady = fontsLoaded || fontError || fontWaitExceeded;
+
+  useEffect(() => {
+    if (!fontsReady) return;
+    (async () => {
       await SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
+      if (__DEV__ && fontWaitExceeded && !fontsLoaded && !fontError) {
+        console.warn(
+          '[App] Font loading timed out; continuing with system fonts. Check device storage / first launch.'
+        );
+      }
+    })();
+  }, [fontsReady, fontWaitExceeded, fontsLoaded, fontError]);
 
   useEffect(() => {
     // Restore persisted auth token on boot
@@ -38,12 +55,9 @@ const AppContent = () => {
     });
   }, []);
 
-  useEffect(() => {
-    onLayoutRootView();
-  }, [onLayoutRootView]);
-
-  if (!fontsLoaded && !fontError) {
-    return null;
+  if (!fontsReady) {
+    // Non-null tree helps the native window finish layout; avoids “stuck on splash” on some Android builds.
+    return <View style={{ flex: 1 }} />;
   }
 
   return <RootNavigator />;
