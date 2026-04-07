@@ -11,7 +11,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ## [Unreleased] - 2026-03-24
 
 ### Config
-- **`EXPO_PUBLIC_API_BASE_URL`** — `src/config/env.js` reads this at build time so the app can use a public HTTPS API when the device is not on the same LAN as the dev machine (cellular / other Wi‑Fi / EAS APK). If unset, behavior falls back to the LAN `API_BASE_URL`. Added `.env.example` and ignored `.env` in `.gitignore`.
+- **`EXPO_PUBLIC_API_BASE_URL`** — `src/config/env.js` reads this at build time so the app can use a public HTTPS API when the device is not on the same LAN as the dev machine (cellular / other Wi‑Fi / EAS APK). If unset, behavior falls back to the LAN `API_BASE_URL`. Added `.env.example` and ignored `.env` in `.gitignore`. **Local dev:** a root `.env` with `EXPO_PUBLIC_API_BASE_URL` overrides `env.js` — remove or update it when switching off ngrok; restart Metro after edits.
 - **`eas.json` preview profile** — `EXPO_PUBLIC_API_BASE_URL` set to LAN Nest host (`http://192.168.2.156:4001/api/v1`); change IP/port if your dev machine or backend moves.
 - **`eas.json` `cli.requireCommit`** — use `false` on Windows if EAS upload hits `ENOTEMPTY` on shallow-clone cleanup; use `true` when a clean git tree is required and upload works on your machine.
 
