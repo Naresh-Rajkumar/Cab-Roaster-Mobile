@@ -25,7 +25,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Auth / API
 - **ngrok + OTP** — default Axios header `ngrok-skip-browser-warning` when `API_BASE_URL` contains `ngrok` (avoids ngrok HTML interstitial breaking API calls). Clearer messages for `Network Error` / timeouts on login, send OTP, verify OTP, and profile fetch.
-- **`parseAxiosErrorMessage`** (`src/utils/parseAxiosError.js`) — maps Nest validation (`message` array) and network errors to user-facing strings; auth thunks use it.
+- **`parseAxiosErrorMessage`** (`src/utils/parseAxiosError.js`) — maps Nest validation (`message` array) and network errors to user-facing strings; auth thunks use it. Network errors now include **`API_BASE_URL`** and a hint if the build still points at a **LAN IP** (won’t work on cellular).
 - **Dev HTTP log** — in `__DEV__`, Axios request interceptor logs `METHOD` + full URL for each API call.
 
 ### Build / Git
