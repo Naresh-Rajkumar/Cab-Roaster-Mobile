@@ -13,6 +13,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ### Config
 - **`EXPO_PUBLIC_API_BASE_URL`** — `src/config/env.js` reads this at build time so the app can use a public HTTPS API when the device is not on the same LAN as the dev machine (cellular / other Wi‑Fi / EAS APK). If unset, behavior falls back to the LAN `API_BASE_URL`. Added `.env.example` and ignored `.env` in `.gitignore`.
 - **`eas.json` preview profile** — `EXPO_PUBLIC_API_BASE_URL` set for ngrok-backed API testing (update when the tunnel URL changes).
+- **`eas.json` `cli.requireCommit`** — set to satisfy EAS upload on Windows (clean git tree required before `eas build`).
+
+### Dependencies
+- **Expo SDK 55 / EAS Android** — added `react-native-worklets` (Reanimated peer); aligned `expo`, `react-native`, and related packages for stable native builds.
 
 ### Changed — Real API Integration (Mock → NestJS Backend)
 
