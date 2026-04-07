@@ -1,0 +1,57 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath('com.android.tools.build:gradle')
+    classpath('com.facebook.react:react-native-gradle-plugin')
+    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+  }
+}
+
+allprojects {
+  repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://www.jitpack.io' }
+  }
+}
+
+apply plugin: "expo-root-project"
+apply plugin: "com.facebook.react.rootproject"
+
+// New Architecture + CMake/Ninja embed the full absolute path to sources under node_modules in object
+// file names; on Windows the total often exceeds MAX_PATH (260). Reanimated 4 requires New Architecture,
+// so we cannot turn it off — the project root must be physically short (junction) or long paths enabled.
+def isWindows = org.gradle.internal.os.OperatingSystem.current().isWindows()
+def pathCheck =
+    (findProperty("cabroster.nativeWindowsPathCheck") ?: "true").toString().toBoolean()
+if (isWindows && pathCheck) {
+  // Do NOT use canonicalFile/canonicalPath here: on Windows they resolve junctions to the real long path,
+  // which breaks the %USERPROFILE%\\r workaround. absolutePath keeps the short path Gradle was opened with.
+  def mobileRoot = rootDir.parentFile
+  def probe = new File(
+      mobileRoot,
+      "node_modules/react-native-safe-area-context/common/cpp/react/renderer/components/safeareacontext/RNCSafeAreaViewShadowNode.cpp"
+  )
+  if (probe.exists()) {
+    def ninjaOverhead = 95
+    def pathLen = probe.absolutePath.length()
+    if (pathLen + ninjaOverhead > 259) {
+      throw new GradleException(
+          "Windows path too long for React Native New Architecture (CMake/Ninja).\n" +
+          "Path to native sources is ${pathLen} characters (absolute); with build prefixes this exceeds 260.\n\n" +
+          "Fix (pick one):\n" +
+          "  1) Run:  scripts\\\\create-short-junction.cmd\n" +
+          "     Then open THIS project ONLY via:  %USERPROFILE%\\\\r   (File > Open that folder, or android subfolder under it)\n" +
+          "     Delete android\\\\app\\\\.cxx, then rebuild.\n" +
+          "  2) PowerShell as Admin:  android\\\\enable-windows-long-paths.ps1  then reboot, then set in gradle.properties:\n" +
+          "     cabroster.nativeWindowsPathCheck=false\n" +
+          "  3) Move/clone the repo to a short path (e.g. C:\\\\dev\\\\cab).\n"
+      )
+    }
+  }
+}

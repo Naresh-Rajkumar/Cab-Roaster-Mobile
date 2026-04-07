@@ -7,9 +7,9 @@
     "start:android": "expo start --android",
     "dev:android": "scripts\\dev-android.cmd",
     "build:apk:local": "node scripts/build-release-apk.cjs",
-    "build:apk:eas": "eas build --platform android --profile preview",
-    "eas:whoami": "eas whoami",
-    "eas:last": "eas build:list --platform android --limit 1 --non-interactive",
+    "build:apk:eas": "npx eas-cli@^18.5.0 build --platform android --profile preview",
+    "eas:whoami": "npx eas-cli@^18.5.0 whoami",
+    "eas:last": "npx eas-cli@^18.5.0 build:list --platform android --limit 1 --non-interactive",
     "eas:portal": "node scripts/open-expo-builds.cjs",
     "android": "node scripts/android-cli.cjs",
     "junction:short": "scripts\\create-short-junction.cmd",
@@ -49,9 +49,6 @@
     "react-native-worklets": "0.7.2",
     "react-redux": "^9.2.0",
     "socket.io-client": "^4.8.3"
-  },
-  "devDependencies": {
-    "eas-cli": "^18.5.0"
   },
   "private": true
 }

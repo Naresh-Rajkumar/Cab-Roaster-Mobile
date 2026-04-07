@@ -37,8 +37,14 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# generated native folders
-/ios
-/android
+# Native projects must be tracked for EAS Build (gradlew lives under android/).
+# Ignore only heavy/generated paths inside them.
+/ios/Pods
+/ios/build
+/ios/**/*.xcworkspace/xcuserdata
+/android/.gradle
+/android/build
+/android/app/build
+/android/app/.cxx
 Cabroster-UI/
 Cab-Roaster-Mobile/

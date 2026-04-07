@@ -17,6 +17,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Dependencies
 - **Expo SDK 55 / EAS Android** — added `react-native-worklets` (Reanimated peer); aligned `expo`, `react-native`, and related packages for stable native builds.
+- **`eas-cli`** — removed from `devDependencies` (use `npx eas-cli` / global install; avoids `expo doctor` failure on EAS).
+
+### Build / Git
+- **`android/` tracked in git** — EAS was failing with `ENOENT ... android/gradlew` because `/android` was fully gitignored and never uploaded. `.gitignore` now ignores only native build artifacts under `android/` / `ios/`, not the whole folders.
 
 ### Changed — Real API Integration (Mock → NestJS Backend)
 
