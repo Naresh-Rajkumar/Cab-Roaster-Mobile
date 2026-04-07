@@ -21,6 +21,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Build / Git
 - **`android/` tracked in git** — EAS was failing with `ENOENT ... android/gradlew` because `/android` was fully gitignored and never uploaded. `.gitignore` now ignores only native build artifacts under `android/` / `ios/`, not the whole folders.
+- **`.easignore`** — removed `.git` entry so EAS CLI does not rely on a temp shallow-clone (avoids Windows `ENOTEMPTY` during tarball upload with `requireCommit`).
 
 ### Changed — Real API Integration (Mock → NestJS Backend)
 

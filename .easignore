@@ -1,5 +1,5 @@
 # Smaller EAS upload archives (deps install on Expo servers)
-.git
+# Do not list .git here — it triggers shallow-clone + Windows ENOTEMPTY on upload cleanup with requireCommit.
 .idea
 .vscode
 *.log
