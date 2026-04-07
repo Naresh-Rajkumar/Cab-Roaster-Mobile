@@ -13,7 +13,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ### Config
 - **`EXPO_PUBLIC_API_BASE_URL`** — `src/config/env.js` reads this at build time so the app can use a public HTTPS API when the device is not on the same LAN as the dev machine (cellular / other Wi‑Fi / EAS APK). If unset, behavior falls back to the LAN `API_BASE_URL`. Added `.env.example` and ignored `.env` in `.gitignore`.
 - **`eas.json` preview profile** — `EXPO_PUBLIC_API_BASE_URL` set for ngrok-backed API testing (update when the tunnel URL changes).
-- **`eas.json` `cli.requireCommit`** — set to satisfy EAS upload on Windows (clean git tree required before `eas build`).
+- **`eas.json` `cli.requireCommit`** — use `false` on Windows if EAS upload hits `ENOTEMPTY` on shallow-clone cleanup; use `true` when a clean git tree is required and upload works on your machine.
 
 ### Dependencies
 - **Expo SDK 55 / EAS Android** — added `react-native-worklets` (Reanimated peer); aligned `expo`, `react-native`, and related packages for stable native builds.
@@ -29,6 +29,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **Dev HTTP log** — in `__DEV__`, Axios request interceptor logs `METHOD` + full URL for each API call.
 
 ### Build / Git
+- **`eas.json` `requireCommit`** — set to `false` so EAS CLI on Windows can complete tarball upload without `ENOTEMPTY` on shallow-clone cleanup (re-enable `true` on macOS/Linux or if upload is stable).
 - **`android/` tracked in git** — EAS was failing with `ENOENT ... android/gradlew` because `/android` was fully gitignored and never uploaded. `.gitignore` now ignores only native build artifacts under `android/` / `ios/`, not the whole folders.
 - **`.easignore`** — removed `.git` entry so EAS CLI does not rely on a temp shallow-clone (avoids Windows `ENOTEMPTY` during tarball upload with `requireCommit`).
 
