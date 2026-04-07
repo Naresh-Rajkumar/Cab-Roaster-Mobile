@@ -19,6 +19,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **Expo SDK 55 / EAS Android** — added `react-native-worklets` (Reanimated peer); aligned `expo`, `react-native`, and related packages for stable native builds.
 - **`eas-cli`** — removed from `devDependencies` (use `npx eas-cli` / global install; avoids `expo doctor` failure on EAS).
 
+### App / Debug
+- **`App.js`** — in `__DEV__`, logs `API_BASE_URL` and pings `GET /health` once after startup; if it fails, Metro shows a hint about ngrok/port/`EXPO_PUBLIC_API_BASE_URL`.
+- **`env.js`** — LAN fallback port aligned with Cabroster-BE default `PORT` (4000); adjust IP/PORT in local `.env` if needed.
+
+### Auth / API
+- **ngrok + OTP** — default Axios header `ngrok-skip-browser-warning` when `API_BASE_URL` contains `ngrok` (avoids ngrok HTML interstitial breaking API calls). Clearer messages for `Network Error` / timeouts on login, send OTP, verify OTP, and profile fetch.
+- **`parseAxiosErrorMessage`** (`src/utils/parseAxiosError.js`) — maps Nest validation (`message` array) and network errors to user-facing strings; auth thunks use it.
+- **Dev HTTP log** — in `__DEV__`, Axios request interceptor logs `METHOD` + full URL for each API call.
+
 ### Build / Git
 - **`android/` tracked in git** — EAS was failing with `ENOENT ... android/gradlew` because `/android` was fully gitignored and never uploaded. `.gitignore` now ignores only native build artifacts under `android/` / `ios/`, not the whole folders.
 - **`.easignore`** — removed `.git` entry so EAS CLI does not rely on a temp shallow-clone (avoids Windows `ENOTEMPTY` during tarball upload with `requireCommit`).

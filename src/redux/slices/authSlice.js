@@ -2,8 +2,13 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import * as SecureStore from 'expo-secure-store';
 import { authService } from '../../services/api/authService';
 import { setAuthToken } from '../../services/axiosConfig';
+import { parseAxiosErrorMessage } from '../../utils/parseAxiosError';
 
 const TOKEN_KEY = 'auth_access_token';
+
+function getAuthAxiosErrorMessage(error, fallback) {
+  return parseAxiosErrorMessage(error, fallback);
+}
 
 /** Persist token to secure storage (fire-and-forget — never blocks auth flow) */
 function persistToken(token) {
@@ -37,7 +42,7 @@ export const loginUser = createAsyncThunk(
       }
       return response.data;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Login failed');
+      return rejectWithValue(getAuthAxiosErrorMessage(error, 'Login failed'));
     }
   }
 );
@@ -49,7 +54,7 @@ export const sendOtp = createAsyncThunk(
       const response = await authService.sendOtp(phone);
       return response.data?.data ?? response.data;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to send OTP');
+      return rejectWithValue(getAuthAxiosErrorMessage(error, 'Failed to send OTP'));
     }
   }
 );
@@ -68,7 +73,7 @@ export const verifyOTP = createAsyncThunk(
       }
       return response.data;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Verification failed');
+      return rejectWithValue(getAuthAxiosErrorMessage(error, 'Verification failed'));
     }
   }
 );
@@ -94,7 +99,7 @@ export const fetchProfile = createAsyncThunk(
       const response = await authService.getProfile();
       return response.data;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch profile');
+      return rejectWithValue(getAuthAxiosErrorMessage(error, 'Failed to fetch profile'));
     }
   }
 );

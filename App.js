@@ -9,7 +9,8 @@ import { ThemeProvider } from './src/theme/ThemeProvider';
 import RootNavigator from './src/navigation/RootNavigator';
 import useAppFonts from './src/hooks/useAppFonts';
 import { loadPersistedToken, fetchProfile } from './src/redux/slices/authSlice';
-import { setAuthToken } from './src/services/axiosConfig';
+import axiosInstance, { setAuthToken } from './src/services/axiosConfig';
+import { API_BASE_URL } from './src/config/env';
 
 // Keep splash screen visible while loading fonts
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -54,6 +55,26 @@ const AppContent = () => {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!__DEV__ || !fontsReady) return;
+    console.log('[Cab-Roaster] API_BASE_URL =', API_BASE_URL);
+    const t = setTimeout(() => {
+      axiosInstance
+        .get('/health')
+        .then((res) => {
+          const inner = res.data?.data ?? res.data;
+          console.log('[Cab-Roaster] GET /health OK', inner?.status, inner?.timestamp);
+        })
+        .catch((err) =>
+          console.warn(
+            '[Cab-Roaster] GET /health failed — backend/ngrok/port mismatch. Nest: Cabroster-BE PORT must match ngrok (e.g. ngrok http 4000). Update .env or eas.json EXPO_PUBLIC_API_BASE_URL if ngrok URL changed.',
+            err?.message
+          )
+        );
+    }, 300);
+    return () => clearTimeout(t);
+  }, [fontsReady]);
 
   if (!fontsReady) {
     // Non-null tree helps the native window finish layout; avoids “stuck on splash” on some Android builds.

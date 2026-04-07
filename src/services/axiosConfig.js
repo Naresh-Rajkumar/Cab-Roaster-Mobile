@@ -18,6 +18,11 @@ const axiosInstance = axios.create({
   },
 });
 
+// ngrok free tier may serve an HTML interstitial to API clients without this header (looks like a failed / non-JSON response).
+if (typeof API_BASE_URL === 'string' && /ngrok/i.test(API_BASE_URL)) {
+  axiosInstance.defaults.headers.common['ngrok-skip-browser-warning'] = 'true';
+}
+
 export const setAuthToken = (token) => {
   if (token) {
     axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -32,6 +37,10 @@ axiosInstance.interceptors.request.use(
     const token = axiosInstance.defaults.headers.common['Authorization'];
     if (token) {
       config.headers['Authorization'] = token;
+    }
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      const fullUrl = `${config.baseURL || ''}${config.url || ''}`;
+      console.log(`[HTTP] ${(config.method || 'GET').toUpperCase()} ${fullUrl}`);
     }
     return config;
   },
