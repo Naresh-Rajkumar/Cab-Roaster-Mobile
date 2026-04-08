@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,7 +16,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { configService } from '../../services/api/configService';
 import { SCREENS } from '../../constants';
 import spacing from '../../theme/spacing.json';
-import typography from '../../theme/typography.json';
+import { nominatimSearch } from '../../utils/nominatimSearch';
 
 const unwrap = (res) => {
   const body = res?.data;
@@ -24,31 +25,55 @@ const unwrap = (res) => {
   return body ?? [];
 };
 
+function normalizeStopsList(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && Array.isArray(raw.rows)) return raw.rows;
+  return [];
+}
+
+function stopMatchesQuery(stop, filter) {
+  const q = filter.trim().toLowerCase();
+  if (!q) return true;
+  const name = String(stop.name || stop.stopName || '').toLowerCase();
+  const area = String(stop.area || '').toLowerCase();
+  const landmark = String(stop.landmark || '').toLowerCase();
+  return name.includes(q) || area.includes(q) || landmark.includes(q);
+}
+
 const RequestCabStep1Screen = ({ navigation }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
   const user = useSelector((state) => state.auth.user);
 
-  // API data
   const [workLocations, setWorkLocations] = useState([]);
   const [stops, setStops] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Form state
   const [workLocation, setWorkLocation] = useState('');
   const [cabPreference, setCabPreference] = useState('both');
   const [homeLocation, setHomeLocation] = useState('');
+  const [homeSuggestions, setHomeSuggestions] = useState([]);
+  const [homeSearchLoading, setHomeSearchLoading] = useState(false);
+  const skipHomeSearchRef = useRef(false);
+  const homeSearchAbortRef = useRef(null);
+
   const [differentDrop, setDifferentDrop] = useState(false);
-  const [pickupPoint, setPickupPoint] = useState('');
-  const [dropPoint, setDropPoint] = useState('');
+  const [pickupStop, setPickupStop] = useState(null);
+  const [dropStop, setDropStop] = useState(null);
+  const [pickupFilter, setPickupFilter] = useState('');
+  const [dropFilter, setDropFilter] = useState('');
   const [showPickupDropdown, setShowPickupDropdown] = useState(false);
   const [showDropDropdown, setShowDropDropdown] = useState(false);
 
-  // Greeting
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
   const userName = user?.name?.split(' ')[0] || user?.firstName || 'User';
-  const initials = (user?.name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+  const initials = (user?.name || 'U')
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
   useEffect(() => {
     const loadData = async () => {
@@ -58,10 +83,9 @@ const RequestCabStep1Screen = ({ navigation }) => {
           configService.getStops(),
         ]);
         const locs = unwrap(locRes);
-        const stps = unwrap(stopsRes);
+        const stps = normalizeStopsList(unwrap(stopsRes));
         setWorkLocations(Array.isArray(locs) ? locs : []);
-        setStops(Array.isArray(stps) ? stps : []);
-        // Default to first work location
+        setStops(stps);
         if (Array.isArray(locs) && locs.length > 0) {
           setWorkLocation(locs[0].name || locs[0].id);
         }
@@ -74,13 +98,78 @@ const RequestCabStep1Screen = ({ navigation }) => {
     loadData();
   }, []);
 
+  useEffect(() => {
+    const q = homeLocation.trim();
+    if (q.length < 3) {
+      setHomeSuggestions([]);
+      setHomeSearchLoading(false);
+      return;
+    }
+    if (skipHomeSearchRef.current) {
+      skipHomeSearchRef.current = false;
+      setHomeSuggestions([]);
+      return;
+    }
+    homeSearchAbortRef.current?.abort();
+    const ac = new AbortController();
+    homeSearchAbortRef.current = ac;
+
+    const t = setTimeout(() => {
+      setHomeSearchLoading(true);
+      nominatimSearch(q, { signal: ac.signal, limit: 8 })
+        .then((rows) => {
+          if (!ac.signal.aborted) setHomeSuggestions(rows);
+        })
+        .finally(() => {
+          if (!ac.signal.aborted) setHomeSearchLoading(false);
+        });
+    }, 450);
+
+    return () => {
+      clearTimeout(t);
+      ac.abort();
+    };
+  }, [homeLocation]);
+
+  const filteredPickupStops = useMemo(
+    () => stops.filter((s) => stopMatchesQuery(s, pickupFilter)),
+    [stops, pickupFilter],
+  );
+  const filteredDropStops = useMemo(
+    () => stops.filter((s) => stopMatchesQuery(s, dropFilter)),
+    [stops, dropFilter],
+  );
+
+  const selectHomeSuggestion = (item) => {
+    skipHomeSearchRef.current = true;
+    setHomeLocation(item.display_name || '');
+    setHomeSuggestions([]);
+    setHomeSearchLoading(false);
+  };
+
+  const togglePickupDropdown = () => {
+    const next = !showPickupDropdown;
+    setShowPickupDropdown(next);
+    setShowDropDropdown(false);
+    if (next) setPickupFilter('');
+  };
+
+  const toggleDropDropdown = () => {
+    const next = !showDropDropdown;
+    setShowDropDropdown(next);
+    setShowPickupDropdown(false);
+    if (next) setDropFilter('');
+  };
+
   const handleContinue = () => {
+    if (!homeLocation.trim() || !pickupStop?.id) return;
+    const drop = differentDrop && dropStop ? dropStop : pickupStop;
     navigation.navigate(SCREENS.REQUEST_CAB_STEP2, {
       workLocation,
       cabPreference,
-      homeLocation,
-      pickupStop: pickupPoint,
-      dropStop: differentDrop ? dropPoint : pickupPoint,
+      homeLocation: homeLocation.trim(),
+      pickupStop: { id: pickupStop.id, name: pickupStop.name },
+      dropStop: { id: drop.id, name: drop.name },
     });
   };
 
@@ -99,7 +188,6 @@ const RequestCabStep1Screen = ({ navigation }) => {
       style={[styles.container, { backgroundColor: colors.background }]}
       edges={['top', 'bottom']}
     >
-      {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.background }]}>
         <View style={styles.avatarWrapper}>
           <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
@@ -107,12 +195,8 @@ const RequestCabStep1Screen = ({ navigation }) => {
           </View>
         </View>
         <View style={styles.headerTextWrapper}>
-          <Text style={[styles.greetingText, { color: colors.textSecondary }]}>
-            {greeting},
-          </Text>
-          <Text style={[styles.greetingName, { color: colors.text }]}>
-            {userName}!
-          </Text>
+          <Text style={[styles.greetingText, { color: colors.textSecondary }]}>{greeting},</Text>
+          <Text style={[styles.greetingName, { color: colors.text }]}>{userName}!</Text>
         </View>
       </View>
 
@@ -121,22 +205,15 @@ const RequestCabStep1Screen = ({ navigation }) => {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Title Row */}
         <View style={styles.titleRow}>
-          <Text style={[styles.screenTitle, { color: colors.text }]}>
-            Ride Scheduling Setup
-          </Text>
-          <Text style={[styles.stepIndicator, { color: colors.textSecondary }]}>
-            1 of 2
-          </Text>
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Ride Scheduling Setup</Text>
+          <Text style={[styles.stepIndicator, { color: colors.textSecondary }]}>1 of 2</Text>
         </View>
 
-        {/* Progress Bar */}
         <View style={[styles.progressBarTrack, { backgroundColor: colors.border || '#E5E7EB' }]}>
           <View style={[styles.progressBarFill, { backgroundColor: colors.primary, width: '100%' }]} />
         </View>
 
-        {/* Work Location */}
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.text }]}>
             Work Location <Text style={{ color: colors.primary }}>*</Text>
@@ -170,7 +247,6 @@ const RequestCabStep1Screen = ({ navigation }) => {
           )}
         </View>
 
-        {/* Cab Usage Preference */}
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.text }]}>
             Cab Usage Preference <Text style={{ color: colors.primary }}>*</Text>
@@ -190,7 +266,10 @@ const RequestCabStep1Screen = ({ navigation }) => {
                 <View
                   style={[
                     styles.radioOuter,
-                    { borderColor: cabPreference === option.value ? colors.primary : colors.border || '#D1D5DB' },
+                    {
+                      borderColor:
+                        cabPreference === option.value ? colors.primary : colors.border || '#D1D5DB',
+                    },
                   ]}
                 >
                   {cabPreference === option.value && (
@@ -213,10 +292,12 @@ const RequestCabStep1Screen = ({ navigation }) => {
           </View>
         </View>
 
-        {/* Home Location */}
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.text }]}>
             Home Location <Text style={{ color: colors.primary }}>*</Text>
+          </Text>
+          <Text style={[styles.fieldHint, { color: colors.textSecondary }]}>
+            Type at least 3 characters to search addresses (OpenStreetMap).
           </Text>
           <View
             style={[styles.inputContainer, { backgroundColor: '#FFFFFF', borderColor: colors.border || '#E5E7EB' }]}
@@ -226,13 +307,34 @@ const RequestCabStep1Screen = ({ navigation }) => {
               style={[styles.textInput, { color: colors.text }]}
               value={homeLocation}
               onChangeText={setHomeLocation}
-              placeholder="Enter your home location"
+              placeholder="Search your home address"
               placeholderTextColor={colors.textTertiary || '#9CA3AF'}
+              autoCorrect={false}
+              autoCapitalize="words"
             />
+            {homeSearchLoading ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : null}
           </View>
+          {homeSuggestions.length > 0 && (
+            <View style={[styles.suggestList, { borderColor: colors.border || '#E5E7EB' }]}>
+              <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                {homeSuggestions.map((item, idx) => (
+                  <TouchableOpacity
+                    key={`${item.place_id ?? item.osm_id ?? idx}`}
+                    style={[styles.suggestItem, { borderBottomColor: colors.border || '#F3F4F6' }]}
+                    onPress={() => selectHomeSuggestion(item)}
+                  >
+                    <Text style={[styles.suggestText, { color: colors.text }]} numberOfLines={3}>
+                      {item.display_name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
         </View>
 
-        {/* Pickup & Drop Point */}
         <View style={styles.section}>
           <View style={styles.pickupHeaderRow}>
             <Text style={[styles.sectionLabel, { color: colors.text }]}>
@@ -254,46 +356,75 @@ const RequestCabStep1Screen = ({ navigation }) => {
               >
                 {differentDrop && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
               </View>
-              <Text style={[styles.checkboxLabel, { color: colors.textSecondary }]}>
-                Different Drop Point
-              </Text>
+              <Text style={[styles.checkboxLabel, { color: colors.textSecondary }]}>Different Drop Point</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Pickup Dropdown */}
           <TouchableOpacity
             style={[styles.dropdownContainer, { backgroundColor: '#FFFFFF', borderColor: colors.border || '#E5E7EB' }]}
-            onPress={() => { setShowPickupDropdown(!showPickupDropdown); setShowDropDropdown(false); }}
+            onPress={togglePickupDropdown}
             activeOpacity={0.8}
           >
             <Ionicons name="location" size={20} color={colors.primary} style={styles.inputIcon} />
-            <Text style={[styles.dropdownText, { color: pickupPoint ? colors.text : colors.textTertiary || '#9CA3AF', flex: 1 }]}>
-              {pickupPoint || 'Select pickup point'}
+            <Text
+              style={[
+                styles.dropdownText,
+                {
+                  color: pickupStop ? colors.text : colors.textTertiary || '#9CA3AF',
+                  flex: 1,
+                },
+              ]}
+            >
+              {pickupStop ? pickupStop.name : 'Select pickup point'}
             </Text>
             <Ionicons name="chevron-down" size={20} color={colors.textSecondary || '#6B7280'} />
           </TouchableOpacity>
           {showPickupDropdown && (
             <View style={[styles.dropdownList, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}>
-              <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
-                {stops.map((stop) => (
-                  <TouchableOpacity
-                    key={stop.id}
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setPickupPoint(stop.name || stop.stopName);
-                      setShowPickupDropdown(false);
-                    }}
-                  >
-                    <Text style={[styles.dropdownItemText, { color: colors.text }]}>
-                      {stop.name || stop.stopName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <View
+                style={[
+                  styles.dropdownSearchRow,
+                  { borderColor: colors.border || '#E5E7EB', backgroundColor: '#F9FAFB' },
+                ]}
+              >
+                <Ionicons name="search-outline" size={18} color={colors.textTertiary} style={{ marginRight: 8 }} />
+                <TextInput
+                  style={[styles.dropdownSearchInput, { color: colors.text }]}
+                  value={pickupFilter}
+                  onChangeText={setPickupFilter}
+                  placeholder="Search stops…"
+                  placeholderTextColor={colors.textTertiary}
+                  autoFocus={Platform.OS !== 'web'}
+                />
+              </View>
+              <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                {filteredPickupStops.length === 0 ? (
+                  <Text style={[styles.emptyFilterText, { color: colors.textSecondary }]}>No matching stops</Text>
+                ) : (
+                  filteredPickupStops.map((stop) => {
+                    const label = stop.name || stop.stopName || `Stop ${stop.id}`;
+                    return (
+                      <TouchableOpacity
+                        key={stop.id}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setPickupStop({ id: stop.id, name: label });
+                          setShowPickupDropdown(false);
+                          setPickupFilter('');
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, { color: colors.text }]}>{label}</Text>
+                        {stop.area && stop.area !== '-' ? (
+                          <Text style={[styles.dropdownItemSub, { color: colors.textSecondary }]}>{stop.area}</Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
               </ScrollView>
             </View>
           )}
 
-          {/* Different Drop Point Dropdown */}
           {differentDrop && (
             <>
               <Text style={[styles.sectionLabel, { color: colors.text, marginTop: spacing.md }]}>
@@ -301,32 +432,65 @@ const RequestCabStep1Screen = ({ navigation }) => {
               </Text>
               <TouchableOpacity
                 style={[styles.dropdownContainer, { backgroundColor: '#FFFFFF', borderColor: colors.border || '#E5E7EB' }]}
-                onPress={() => { setShowDropDropdown(!showDropDropdown); setShowPickupDropdown(false); }}
+                onPress={toggleDropDropdown}
                 activeOpacity={0.8}
               >
                 <Ionicons name="location" size={20} color={colors.primary} style={styles.inputIcon} />
-                <Text style={[styles.dropdownText, { color: dropPoint ? colors.text : colors.textTertiary || '#9CA3AF', flex: 1 }]}>
-                  {dropPoint || 'Select drop point'}
+                <Text
+                  style={[
+                    styles.dropdownText,
+                    {
+                      color: dropStop ? colors.text : colors.textTertiary || '#9CA3AF',
+                      flex: 1,
+                    },
+                  ]}
+                >
+                  {dropStop ? dropStop.name : 'Select drop point'}
                 </Text>
                 <Ionicons name="chevron-down" size={20} color={colors.textSecondary || '#6B7280'} />
               </TouchableOpacity>
               {showDropDropdown && (
                 <View style={[styles.dropdownList, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}>
-                  <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
-                    {stops.map((stop) => (
-                      <TouchableOpacity
-                        key={stop.id}
-                        style={styles.dropdownItem}
-                        onPress={() => {
-                          setDropPoint(stop.name || stop.stopName);
-                          setShowDropDropdown(false);
-                        }}
-                      >
-                        <Text style={[styles.dropdownItemText, { color: colors.text }]}>
-                          {stop.name || stop.stopName}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                  <View
+                    style={[
+                      styles.dropdownSearchRow,
+                      { borderColor: colors.border || '#E5E7EB', backgroundColor: '#F9FAFB' },
+                    ]}
+                  >
+                    <Ionicons name="search-outline" size={18} color={colors.textTertiary} style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={[styles.dropdownSearchInput, { color: colors.text }]}
+                      value={dropFilter}
+                      onChangeText={setDropFilter}
+                      placeholder="Search stops…"
+                      placeholderTextColor={colors.textTertiary}
+                      autoFocus={Platform.OS !== 'web'}
+                    />
+                  </View>
+                  <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                    {filteredDropStops.length === 0 ? (
+                      <Text style={[styles.emptyFilterText, { color: colors.textSecondary }]}>No matching stops</Text>
+                    ) : (
+                      filteredDropStops.map((stop) => {
+                        const label = stop.name || stop.stopName || `Stop ${stop.id}`;
+                        return (
+                          <TouchableOpacity
+                            key={stop.id}
+                            style={styles.dropdownItem}
+                            onPress={() => {
+                              setDropStop({ id: stop.id, name: label });
+                              setShowDropDropdown(false);
+                              setDropFilter('');
+                            }}
+                          >
+                            <Text style={[styles.dropdownItemText, { color: colors.text }]}>{label}</Text>
+                            {stop.area && stop.area !== '-' ? (
+                              <Text style={[styles.dropdownItemSub, { color: colors.textSecondary }]}>{stop.area}</Text>
+                            ) : null}
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
                   </ScrollView>
                 </View>
               )}
@@ -337,22 +501,24 @@ const RequestCabStep1Screen = ({ navigation }) => {
         <View style={{ height: spacing.xxxxl }} />
       </ScrollView>
 
-      {/* Sticky Continue Button */}
       <View
         style={[styles.stickyFooter, { backgroundColor: colors.background, borderTopColor: colors.border || '#F3F4F6' }]}
       >
         <TouchableOpacity
           style={[
             styles.continueButton,
-            { backgroundColor: (homeLocation && pickupPoint) ? colors.primary : colors.border || '#D1D5DB' },
+            {
+              backgroundColor:
+                homeLocation.trim() && pickupStop?.id && (!differentDrop || dropStop?.id)
+                  ? colors.primary
+                  : colors.border || '#D1D5DB',
+            },
           ]}
           onPress={handleContinue}
           activeOpacity={0.85}
-          disabled={!homeLocation || !pickupPoint}
+          disabled={!homeLocation.trim() || !pickupStop?.id || (differentDrop && !dropStop?.id)}
         >
-          <Text style={[styles.continueButtonText]}>
-            Continue  →
-          </Text>
+          <Text style={[styles.continueButtonText]}>Continue  →</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -394,6 +560,7 @@ const styles = StyleSheet.create({
   progressBarFill: { height: '100%', borderRadius: 99 },
   section: { marginBottom: spacing.xl },
   sectionLabel: { fontSize: 15, fontWeight: '600', marginBottom: spacing.sm },
+  fieldHint: { fontSize: 12, marginBottom: spacing.xs, marginTop: -spacing.xs },
   segmentedControl: {
     flexDirection: 'row',
     borderWidth: 1.5,
@@ -414,11 +581,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: 8,
-    height: 50,
+    minHeight: 50,
     paddingHorizontal: spacing.base,
   },
   inputIcon: { marginRight: spacing.sm },
-  textInput: { flex: 1, fontSize: 15, height: '100%' },
+  textInput: { flex: 1, fontSize: 15, paddingVertical: Platform.OS === 'ios' ? 12 : 8 },
+  suggestList: {
+    borderWidth: 1,
+    borderRadius: 8,
+    marginTop: 4,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+  },
+  suggestItem: { paddingVertical: 10, paddingHorizontal: spacing.base, borderBottomWidth: StyleSheet.hairlineWidth },
+  suggestText: { fontSize: 13, lineHeight: 18 },
   pickupHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
@@ -438,8 +614,18 @@ const styles = StyleSheet.create({
     marginTop: 4,
     overflow: 'hidden',
   },
+  dropdownSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+  },
+  dropdownSearchInput: { flex: 1, fontSize: 14, paddingVertical: 4 },
   dropdownItem: { paddingVertical: 12, paddingHorizontal: spacing.base, borderBottomWidth: 0.5, borderBottomColor: '#F3F4F6' },
-  dropdownItemText: { fontSize: 14 },
+  dropdownItemText: { fontSize: 14, fontWeight: '500' },
+  dropdownItemSub: { fontSize: 12, marginTop: 2 },
+  emptyFilterText: { padding: spacing.base, fontSize: 13, textAlign: 'center' },
   stickyFooter: { paddingHorizontal: spacing.base, paddingVertical: spacing.md, borderTopWidth: 1 },
   continueButton: { height: 52, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   continueButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
