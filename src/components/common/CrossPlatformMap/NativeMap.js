@@ -17,7 +17,7 @@ import WebView from 'react-native-webview';
 
 // ─── Leaflet HTML template ────────────────────────────────────────────────────
 // Leaflet is loaded from CDN. The map exposes two global functions:
-//   updateMap(data)      — update driver marker, stop markers, polyline
+//   updateMap(data)           — update driver marker, stop markers, polyline, roadRoute
 //   animateTo(lat, lng, zoom) — pan + zoom to a position
 const MAP_HTML = `
 <!DOCTYPE html>
@@ -31,16 +31,39 @@ const MAP_HTML = `
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body, #map { width: 100%; height: 100%; overflow: hidden; }
     .driver-pin {
-      width: 30px; height: 30px; border-radius: 50%;
+      width: 38px; height: 38px; border-radius: 50%;
       background: #643ee8; display: flex; align-items: center;
-      justify-content: center; border: 2.5px solid #fff;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.35); font-size: 15px;
+      justify-content: center; border: 3px solid #fff;
+      box-shadow: 0 3px 10px rgba(100,62,232,0.45); font-size: 18px;
+    }
+    .stop-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      pointer-events: none;
     }
     .stop-pin {
-      border-radius: 50%; display: flex; align-items: center;
-      justify-content: center; border: 2px solid #fff; color: #fff;
-      font-size: 10px; font-weight: 700;
-      box-shadow: 0 1px 5px rgba(0,0,0,0.3);
+      border-radius: 50%;
+      display: flex; align-items: center;
+      justify-content: center; border: 2.5px solid #fff; color: #fff;
+      font-size: 11px; font-weight: 700;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+      flex-shrink: 0;
+    }
+    .eta-badge {
+      position: absolute;
+      left: 30px;
+      top: -6px;
+      background: #fff;
+      border-radius: 10px;
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #643ee8;
+      white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+      border: 1px solid rgba(100,62,232,0.2);
+      pointer-events: none;
     }
   </style>
 </head>
@@ -59,24 +82,33 @@ const MAP_HTML = `
     var driverLayer  = null;
     var stopLayers   = [];
     var trailLayer   = null;
+    var roadLayer    = null;
 
     // ── Icon factories ──────────────────────────────────────────────────────
     function driverIcon() {
       return L.divIcon({
         className: '',
         html: '<div class="driver-pin">🚗</div>',
-        iconSize:   [30, 30],
-        iconAnchor: [15, 15],
+        iconSize:   [38, 38],
+        iconAnchor: [19, 19],
       });
     }
 
-    function stopIcon(color, label) {
+    function stopIcon(color, label, eta) {
       var bg = color || '#9e9aa8';
+      var size = 26;
+      var etaHtml = eta
+        ? '<div class="eta-badge">' + eta + '</div>'
+        : '';
       return L.divIcon({
         className: '',
-        html: '<div class="stop-pin" style="width:24px;height:24px;background:' + bg + '">' + (label || '●') + '</div>',
-        iconSize:   [24, 24],
-        iconAnchor: [12, 12],
+        html: '<div class="stop-wrap">' +
+              '<div class="stop-pin" style="width:' + size + 'px;height:' + size + 'px;background:' + bg + '">' +
+              (label || '●') + '</div>' +
+              etaHtml +
+              '</div>',
+        iconSize:   [size, size],
+        iconAnchor: [size / 2, size / 2],
       });
     }
 
@@ -101,19 +133,28 @@ const MAP_HTML = `
           if (!mk.latitude || !mk.longitude) return;
           var m = L.marker(
             [mk.latitude, mk.longitude],
-            { icon: stopIcon(mk.color, mk.label) }
+            { icon: stopIcon(mk.color, mk.label, mk.eta) }
           ).addTo(map);
           if (mk.title) m.bindPopup(mk.title);
           stopLayers.push(m);
         });
       }
 
-      // Polyline trail
+      // GPS trail (breadcrumb where cab has been — dashed, lighter)
       if (trailLayer) { trailLayer.remove(); trailLayer = null; }
       if (data.polyline && data.polyline.length > 1) {
         trailLayer = L.polyline(
           data.polyline.map(function(p) { return [p.latitude, p.longitude]; }),
-          { color: '#643ee8', weight: 4, opacity: 0.85 }
+          { color: '#643ee8', weight: 3, opacity: 0.5, dashArray: '4 4' }
+        ).addTo(map);
+      }
+
+      // Road-following route ahead (OSRM, dashed purple)
+      if (roadLayer) { roadLayer.remove(); roadLayer = null; }
+      if (data.roadRoute && data.roadRoute.length > 1) {
+        roadLayer = L.polyline(
+          data.roadRoute.map(function(p) { return [p.latitude, p.longitude]; }),
+          { color: '#643ee8', weight: 4, opacity: 0.85, dashArray: '8 6' }
         ).addTo(map);
       }
     };
@@ -128,7 +169,7 @@ const MAP_HTML = `
 
 // ─── Component ────────────────────────────────────────────────────────────────
 const NativeMap = React.forwardRef((
-  { region, markers = [], driverLocation, polyline = [], style },
+  { region, markers = [], driverLocation, polyline = [], roadRoute = [], style },
   ref,
 ) => {
   const webViewRef = useRef(null);
@@ -146,7 +187,12 @@ const NativeMap = React.forwardRef((
 
   // Push data into the WebView whenever props change
   useEffect(() => {
-    const payload = JSON.stringify({ driverLocation: driverLocation ?? null, markers, polyline });
+    const payload = JSON.stringify({
+      driverLocation: driverLocation ?? null,
+      markers,
+      polyline,
+      roadRoute,
+    });
     const js = `window.updateMap(${payload}); true;`;
 
     if (mapReady) {
@@ -155,7 +201,7 @@ const NativeMap = React.forwardRef((
       // Store the latest update so we can send it once the map is ready
       pendingUpdateRef.current = js;
     }
-  }, [driverLocation, markers, polyline, mapReady]);
+  }, [driverLocation, markers, polyline, roadRoute, mapReady]);
 
   // Also pan to the region prop when it changes (initial centre)
   useEffect(() => {

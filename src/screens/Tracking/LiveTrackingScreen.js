@@ -38,9 +38,11 @@ const DEFAULT_REGION = {
 // Map stop status to display values
 function stopDisplay(status) {
   switch (status) {
-    case 'completed': return { label: 'Picked Up', color: '#16a34a' };
+    case 'completed':
+    case 'arrived': return { label: 'Picked Up', color: '#16a34a' };
     case 'in_progress':
-    case 'arriving': return { label: 'Arriving Soon', color: '#643ee8' };
+    case 'arriving':
+    case 'next_stop': return { label: 'Arriving Soon', color: '#643ee8' };
     default: return { label: 'Pending', color: '#9ca3af' };
   }
 }
@@ -301,7 +303,11 @@ const LiveTrackingScreen = ({ navigation, route }) => {
       longitude: stop.longitude,
       title: stop.name,
       label: String(idx + 1),
-      color: stop.status === 'completed' ? '#16a34a' : stop.status === 'next_stop' ? '#643ee8' : '#9e9aa8',
+      color: (stop.status === 'completed' || stop.status === 'arrived')
+        ? '#16a34a'
+        : stop.status === 'next_stop'
+        ? '#643ee8'
+        : '#9e9aa8',
     }));
 
   return (
