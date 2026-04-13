@@ -1,24 +1,27 @@
 /**
  * DriverActiveTripScreen — Figma Driver Handoff
  *
- * Layout:
- *   - Fullscreen map (background)
- *   - Floating header (trip number + SOS)
- *   - Floating bottom sheet:
- *       collapsed  → next stop preview + employee avatar row
- *       expanded   → scrollable stop list with employees + call buttons
- *   - Slide-to-start or End-Trip button anchored at screen bottom
+ * Layout (flex, not absolute — works with bottom tab bar):
+ *   ┌─────────────────────────────┐
+ *   │  Floating header (absolute) │
+ *   │                             │
+ *   │       MAP  (flex:1)         │
+ *   │                             │
+ *   ├─────────────────────────────┤
+ *   │  Bottom panel               │
+ *   │  • "Trip Details" header    │
+ *   │  • "Route Stops" subtitle   │
+ *   │  • Scrollable stop list     │
+ *   │    – every stop visible     │
+ *   │    – current stop expanded  │
+ *   │      (employees + call btn) │
+ *   │  • CTA: Slide to Start/End  │
+ *   └─────────────────────────────┘
  *
- * Map:
- *   - Dashed purple route from driver's GPS → remaining stops (OSRM, road-following)
- *   - ETA badges next to each stop marker ("15 mins")
- *   - Completed stops turn green
- *
- * Stop auto-attendance:
- *   - useDriverLocation triggers handleStopArrival at 150m proximity
- *   - Emits driver_at_stop over socket → employees see CabArrivedScreen
- *   - Navigates driver to AttendanceScreen
- *   - On focus-return, stops are re-fetched so completed ones turn green immediately
+ * Behaviours:
+ *  • OSRM dashed road-following route + ETA badges on map
+ *  • Proximity → attendance popup (auto) → stop turns green → next auto-expands
+ *  • "Slide To End Trip" only when ALL non-destination stops completed/arrived
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -33,7 +36,6 @@ import {
   Dimensions,
   Linking,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -44,145 +46,137 @@ import { startTrip, endTrip } from '../../redux/slices/driverSlice';
 import { useTrackingSocket } from '../../hooks/useTrackingSocket';
 import { useDriverLocation } from '../../hooks/useDriverLocation';
 
-const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const THUMB_SIZE = 52;
-const SLIDE_TRACK_WIDTH = width - 64;
-const SHEET_COLLAPSED_H = 130;
-const SHEET_EXPANDED_H = Math.round(SCREEN_HEIGHT * 0.62);
+const { width, height: SCREEN_H } = Dimensions.get('window');
+const THUMB_SIZE   = 52;
+const TRACK_W      = width - 64;
+const PANEL_HEIGHT = Math.round(SCREEN_H * 0.50); // 50 % — fits above tab bar
 const DEFAULT_REGION = { latitude: 12.9716, longitude: 80.2209, latitudeDelta: 0.05, longitudeDelta: 0.05 };
 
-// ─── Slide-to-start ────────────────────────────────────────────────────────────
-const SlideToStart = ({ label, onComplete, color }) => {
-  const [completed, setCompleted] = useState(false);
-  const pan = React.useRef(new Animated.Value(0)).current;
-  const maxSlide = SLIDE_TRACK_WIDTH - THUMB_SIZE - 8;
+// ─── Slide gesture (reused for Start and End) ────────────────────────────────
+const SlideButton = ({ label, color, onComplete }) => {
+  const [done, setDone] = useState(false);
+  const pan  = useRef(new Animated.Value(0)).current;
+  const maxX = TRACK_W - THUMB_SIZE - 8;
 
-  const panResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderMove: (_, g) => {
-        pan.setValue(Math.max(0, Math.min(g.dx, maxSlide)));
-      },
-      onPanResponderRelease: (_, g) => {
-        if (g.dx >= maxSlide * 0.8) {
-          Animated.spring(pan, { toValue: maxSlide, useNativeDriver: false }).start(() => {
-            setCompleted(true);
-            onComplete && onComplete();
-          });
-        } else {
-          Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start();
-        }
-      },
-    })
-  ).current;
+  const pr = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderMove: (_, g) => pan.setValue(Math.max(0, Math.min(g.dx, maxX))),
+    onPanResponderRelease: (_, g) => {
+      if (g.dx >= maxX * 0.8) {
+        Animated.spring(pan, { toValue: maxX, useNativeDriver: false }).start(() => {
+          setDone(true);
+          onComplete?.();
+        });
+      } else {
+        Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start();
+      }
+    },
+  })).current;
 
   return (
-    <View style={[styles.slideTrack, { backgroundColor: color + '22', borderColor: color + '44' }]}>
-      <Text style={[styles.slideLabel, { color }]}>{completed ? '✓ Started!' : label}</Text>
+    <View style={[ss.slideTrack, { backgroundColor: color + '22', borderColor: color + '55' }]}>
+      <Text style={[ss.slideLabel, { color }]}>{done ? '✓ Done!' : label}</Text>
       <Animated.View
-        style={[styles.slideThumb, { backgroundColor: color, transform: [{ translateX: pan }] }]}
-        {...panResponder.panHandlers}
+        style={[ss.slideThumb, { backgroundColor: color, transform: [{ translateX: pan }] }]}
+        {...pr.panHandlers}
       >
-        <Ionicons name={completed ? 'checkmark' : 'chevron-forward'} size={24} color="#fff" />
+        <Ionicons name={done ? 'checkmark' : 'chevron-forward'} size={24} color="#fff" />
       </Animated.View>
     </View>
   );
 };
 
-// ─── Stop row (inside expanded sheet) ──────────────────────────────────────────
-const StopRow = ({ stop, isLast, colors, onCallEmployee, onConfirmAttendance }) => {
-  const isCompleted = stop.status === 'completed' || stop.status === 'arrived';
-  const isNext = stop.status === 'next_stop';
+// ─── Single stop row ──────────────────────────────────────────────────────────
+const StopRow = ({ stop, isLast, colors, onCall, onConfirmAttendance }) => {
+  const isCompleted  = stop.status === 'completed' || stop.status === 'arrived';
+  const isNext       = stop.status === 'next_stop';
   const isDestination = stop.isDestination;
 
-  const circleColor = isCompleted ? '#16a34a' : isNext ? colors.primary : '#d1d5db';
-  const statusLabel = isCompleted ? 'Completed' : isNext ? 'Next Stop' : isDestination ? 'Destination' : 'Pending';
+  const dotColor    = isCompleted ? '#16a34a' : isNext ? colors.primary : '#d1d5db';
+  const statusLabel = isCompleted ? 'Completed' : isNext ? 'Next Stop' : isDestination ? '' : 'Pending';
   const statusColor = isCompleted ? '#16a34a' : isNext ? colors.primary : '#9ca3af';
 
-  // Overlapping small avatars for this stop
-  const avatarEmployees = (stop.employees ?? []).slice(0, 3);
+  // Show up to 3 overlapping avatars in the header row
+  const previewEmps = (stop.employees ?? []).slice(0, 3);
 
   return (
-    <View style={styles.stopRow}>
-      {/* ── Timeline column ───────────────────────────── */}
-      <View style={styles.timeline}>
+    <View style={ss.row}>
+      {/* ── Timeline ── */}
+      <View style={ss.tl}>
         <View style={[
-          styles.timelineCircle,
-          {
-            backgroundColor: isCompleted ? '#16a34a' : 'transparent',
-            borderColor: circleColor,
-          },
+          ss.dot,
+          { borderColor: dotColor, backgroundColor: isCompleted ? '#16a34a' : 'transparent' },
         ]}>
-          {isCompleted && <Ionicons name="checkmark" size={10} color="#fff" />}
+          {isCompleted && <Ionicons name="checkmark" size={9} color="#fff" />}
         </View>
         {!isLast && (
-          <View style={[
-            styles.timelineLine,
-            { borderColor: isCompleted ? '#16a34a' : '#e5e7eb' },
-          ]} />
+          <View style={[ss.line, { borderColor: isCompleted ? '#16a34a' : '#e5e7eb' }]} />
         )}
       </View>
 
-      {/* ── Content column ───────────────────────────── */}
-      <View style={[styles.stopContent, isLast && { marginBottom: 0 }]}>
-        {/* Header row */}
-        <View style={styles.stopHeader}>
+      {/* ── Content ── */}
+      <View style={[ss.content, isLast && { borderBottomWidth: 0 }]}>
+        {/* Header */}
+        <View style={ss.rowHead}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.stopTime, { color: colors.textSecondary }]}>{stop.time}</Text>
-            <Text style={[styles.stopName, { color: colors.text }]}>{stop.name}</Text>
+            <Text style={[ss.stopTime, { color: colors.textSecondary }]}>{stop.time}</Text>
+            <Text style={[ss.stopName, { color: colors.text }]}>{stop.name}</Text>
           </View>
-          {/* Stacked avatars */}
-          {avatarEmployees.length > 0 && (
-            <View style={styles.avatarStack}>
-              {avatarEmployees.map((emp, i) => (
-                <View key={emp.id} style={[styles.avatarWrap, { marginLeft: i > 0 ? -8 : 0, zIndex: 3 - i }]}>
-                  <Avatar name={emp.name} size={26} />
+
+          {/* Stacked mini avatars */}
+          {previewEmps.length > 0 && (
+            <View style={ss.avatarRow}>
+              {previewEmps.map((e, i) => (
+                <View key={e.id} style={{ marginLeft: i > 0 ? -6 : 0, zIndex: 3 - i }}>
+                  <Avatar name={e.name} size={22} />
                 </View>
               ))}
             </View>
           )}
-          <Text style={[styles.statusLabel, { color: statusColor }]}>{statusLabel}</Text>
+
+          {statusLabel ? (
+            <Text style={[ss.statusBadge, { color: statusColor }]}>{statusLabel}</Text>
+          ) : null}
         </View>
 
-        {/* Employee list — shown for next stop so driver can call them */}
-        {(isNext || isCompleted) && stop.employees && stop.employees.length > 0 && (
-          <View style={styles.empList}>
+        {/* Employee list — shown for current/next stop */}
+        {isNext && (stop.employees ?? []).length > 0 && (
+          <View style={ss.empBlock}>
             {stop.employees.map((emp) => (
-              <View key={emp.id} style={[styles.empRow, { borderBottomColor: colors.borderLight }]}>
-                <Avatar name={emp.name} size={34} />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={[styles.empName, { color: colors.text }]}>{emp.name}</Text>
-                  {isCompleted && (
-                    <Text style={[styles.empStatusText, {
-                      color: emp.status === 'picked_up' ? '#16a34a' : emp.status === 'no_show' ? '#dc2626' : '#9ca3af',
-                    }]}>
-                      {emp.status === 'picked_up' ? 'Picked Up' : emp.status === 'no_show' ? 'No Show' : 'Pending'}
-                    </Text>
-                  )}
-                </View>
-                {isNext && emp.phone ? (
+              <View key={emp.id} style={[ss.empRow, { borderBottomColor: colors.borderLight }]}>
+                <Avatar name={emp.name} size={36} />
+                <Text style={[ss.empName, { color: colors.text }]}>{emp.name}</Text>
+                {emp.phone ? (
                   <TouchableOpacity
-                    style={[styles.callBtn, { borderColor: colors.borderLight }]}
-                    onPress={() => onCallEmployee(emp.phone)}
+                    style={[ss.callBtn, { borderColor: colors.borderLight }]}
+                    onPress={() => onCall(emp.phone)}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="call-outline" size={16} color={colors.primary} />
+                    <Ionicons name="call-outline" size={15} color={colors.primary} />
                   </TouchableOpacity>
                 ) : null}
               </View>
             ))}
+          </View>
+        )}
 
-            {/* Manual attendance button for next stop */}
-            {isNext && !isDestination && (
-              <TouchableOpacity
-                style={[styles.confirmAttBtn, { backgroundColor: colors.primary }]}
-                onPress={() => onConfirmAttendance(stop)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="checkbox-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
-                <Text style={styles.confirmAttBtnText}>Confirm Attendance</Text>
-              </TouchableOpacity>
-            )}
+        {/* Completed: show boarding outcome */}
+        {isCompleted && (stop.employees ?? []).length > 0 && (
+          <View style={ss.empBlock}>
+            {stop.employees.map((emp) => (
+              <View key={emp.id} style={[ss.empRow, { borderBottomColor: colors.borderLight }]}>
+                <Avatar name={emp.name} size={28} />
+                <Text style={[ss.empName, { color: colors.text }]}>{emp.name}</Text>
+                <View style={[
+                  ss.outcomePill,
+                  { backgroundColor: emp.status === 'picked_up' ? '#dcfce7' : '#fee2e2' },
+                ]}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: emp.status === 'picked_up' ? '#16a34a' : '#dc2626' }}>
+                    {emp.status === 'picked_up' ? 'Boarded' : 'No Show'}
+                  </Text>
+                </View>
+              </View>
+            ))}
           </View>
         )}
       </View>
@@ -190,66 +184,40 @@ const StopRow = ({ stop, isLast, colors, onCallEmployee, onConfirmAttendance }) 
   );
 };
 
-// ─── Main Screen ───────────────────────────────────────────────────────────────
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 const DriverActiveTripScreen = ({ navigation, route }) => {
-  const { theme } = useTheme();
-  const colors = theme.colors;
-  const dispatch = useDispatch();
-  const trip = route?.params?.trip ?? {};
-  const tripId = trip?.id;
+  const { theme }  = useTheme();
+  const colors     = theme.colors;
+  const dispatch   = useDispatch();
+  const trip       = route?.params?.trip ?? {};
+  const tripId     = trip?.id;
 
-  // Redux
-  const tripStops = useSelector((state) => state.trip.tripStops);
-  const activeTrip = useSelector((state) => state.driver.activeTrip);
-  const user = useSelector((state) => state.auth.user);
+  const tripStops  = useSelector((s) => s.trip.tripStops);
+  const activeTrip = useSelector((s) => s.driver.activeTrip);
+  const user       = useSelector((s) => s.auth.user);
 
-  // Local state
-  const [stops, setStops] = useState([]);
+  const [stops,       setStops]       = useState([]);
   const [tripStarted, setTripStarted] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
-  const [roadPolyline, setRoadPolyline] = useState([]);
-  const [stopETAs, setStopETAs] = useState({}); // { stopId: 'X mins' }
+  const [roadPoly,    setRoadPoly]    = useState([]);
+  const [stopETAs,    setStopETAs]    = useState({});
 
-  // Sheet animation
-  const sheetAnim = useRef(new Animated.Value(SHEET_COLLAPSED_H)).current;
+  const lastFetchRef = useRef(0);
+  const openedRef    = useRef(new Set());
 
-  const openSheet = () => {
-    setShowDetails(true);
-    Animated.spring(sheetAnim, { toValue: SHEET_EXPANDED_H, useNativeDriver: false, friction: 8 }).start();
-  };
-
-  const closeSheet = () => {
-    Animated.spring(sheetAnim, { toValue: SHEET_COLLAPSED_H, useNativeDriver: false, friction: 8 }).start(() => {
-      setShowDetails(false);
-    });
-  };
-
-  // Socket + GPS
   const { emitLocation, emitStopArrival } = useTrackingSocket();
   const tripMeta = {
-    cabId: trip?.cabId ?? activeTrip?.cabId ?? null,
+    cabId:    trip?.cabId ?? activeTrip?.cabId ?? null,
     driverId: user?.id ?? null,
-    tripId: tripId ?? null,
+    tripId:   tripId ?? null,
   };
 
-  // OSRM throttle ref
-  const lastRouteFetchRef = useRef(0);
-
-  // Prevent duplicate attendance screens for the same stop
-  const openedAttendanceForRef = useRef(new Set());
-
-  // ── Stop arrival handler ─────────────────────────────────────────────────────
+  // ── Stop arrival (proximity trigger) ──────────────────────────────────────
   const handleStopArrival = useCallback((stop) => {
     if (!stop?.id) return;
-    if (openedAttendanceForRef.current.has(String(stop.id))) return;
-    openedAttendanceForRef.current.add(String(stop.id));
+    if (openedRef.current.has(String(stop.id))) return;
+    openedRef.current.add(String(stop.id));
 
-    emitStopArrival({
-      tripId: tripId ?? null,
-      stopId: stop.id,
-      cabId: tripMeta.cabId,
-      driverId: tripMeta.driverId,
-    });
+    emitStopArrival({ tripId, stopId: stop.id, cabId: tripMeta.cabId, driverId: tripMeta.driverId });
 
     navigation.navigate(SCREENS.ATTENDANCE, {
       stop: { ...stop, stopNumber: stops.findIndex((s) => s.id === stop.id) + 1 },
@@ -257,29 +225,29 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
     });
   }, [emitStopArrival, tripId, tripMeta, navigation, stops]);
 
-  const trackableStops = stops.filter((s) => !s.isDestination && (s.latitude || s.longitude));
+  const trackable = stops.filter((s) => !s.isDestination && (s.latitude || s.longitude));
 
   const { location, startTracking, stopTracking } = useDriverLocation(
     emitLocation,
     tripMeta,
-    tripStarted ? trackableStops : [],
+    tripStarted ? trackable : [],
     handleStopArrival,
   );
 
-  // ── Load stops ───────────────────────────────────────────────────────────────
+  // ── Load & sync stops ─────────────────────────────────────────────────────
   useEffect(() => {
     if (tripId) dispatch(fetchTripStops(tripId));
   }, [tripId, dispatch]);
 
   useEffect(() => {
-    if (tripStops && tripStops.length > 0) {
+    if (tripStops?.length) {
       setStops(tripStops);
-      setRoadPolyline([]);
-      lastRouteFetchRef.current = 0;
+      setRoadPoly([]);
+      lastFetchRef.current = 0;
     }
   }, [tripStops]);
 
-  // Re-fetch on focus (return from AttendanceScreen → completed stops go green)
+  // Refresh stops when returning from AttendanceScreen
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
       if (tripId) dispatch(fetchTripStops(tripId));
@@ -287,107 +255,72 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
     return unsub;
   }, [navigation, tripId, dispatch]);
 
-  // ── OSRM road route + ETA ───────────────────────────────────────────────────
-  const fetchRoadRoute = useCallback(async (driverLoc, currentStops) => {
-    if (!driverLoc?.latitude || !driverLoc?.longitude) return;
-    const remaining = currentStops.filter(
+  // ── OSRM road route + ETAs ────────────────────────────────────────────────
+  const fetchRoute = useCallback(async (loc, curStops) => {
+    if (!loc?.latitude) return;
+    const rem = curStops.filter(
       (s) => s.latitude && s.longitude && s.status !== 'completed' && s.status !== 'arrived'
     );
-    if (!remaining.length) return;
-
+    if (!rem.length) return;
     const now = Date.now();
-    if (now - lastRouteFetchRef.current < 30_000) return;
-    lastRouteFetchRef.current = now;
+    if (now - lastFetchRef.current < 30_000) return;
+    lastFetchRef.current = now;
 
     const coords = [
-      `${driverLoc.longitude},${driverLoc.latitude}`,
-      ...remaining.map((s) => `${s.longitude},${s.latitude}`),
+      `${loc.longitude},${loc.latitude}`,
+      ...rem.map((s) => `${s.longitude},${s.latitude}`),
     ].join(';');
 
     try {
-      const res = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`
-      );
+      const res  = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`);
       const data = await res.json();
-      const routeData = data.routes?.[0];
-      if (!routeData) return;
+      const rt   = data.routes?.[0];
+      if (!rt) return;
 
-      // Road polyline
-      const points = routeData.geometry.coordinates.map(([lng, lat]) => ({
-        latitude: lat,
-        longitude: lng,
-      }));
-      setRoadPolyline(points);
+      setRoadPoly(rt.geometry.coordinates.map(([lng, lat]) => ({ latitude: lat, longitude: lng })));
 
-      // Per-stop ETAs from leg durations (cumulative)
-      const legs = routeData.legs ?? [];
-      let cumSecs = 0;
+      let cum = 0;
       const etaMap = {};
-      remaining.forEach((stop, i) => {
-        cumSecs += legs[i]?.duration ?? 0;
-        const mins = Math.max(1, Math.round(cumSecs / 60));
-        etaMap[String(stop.id)] = `${mins} min`;
+      rem.forEach((s, i) => {
+        cum += rt.legs?.[i]?.duration ?? 0;
+        etaMap[String(s.id)] = `${Math.max(1, Math.round(cum / 60))} min`;
       });
       setStopETAs(etaMap);
-    } catch {
-      // Fallback: straight-line polyline stays, no ETA badges
-    }
+    } catch { /* silent fallback */ }
   }, []);
 
   useEffect(() => {
-    if (tripStarted && location && stops.length > 0) {
-      fetchRoadRoute(location, stops);
-    }
-  }, [location?.latitude, location?.longitude, tripStarted, fetchRoadRoute, stops]);
+    if (tripStarted && location && stops.length) fetchRoute(location, stops);
+  }, [location?.latitude, location?.longitude, tripStarted, fetchRoute, stops]);
 
-  // ── Trip controls ────────────────────────────────────────────────────────────
-  const handleStartTrip = async () => {
-    if (!tripMeta.cabId) {
-      console.warn('[DriverActiveTrip] cabId missing — GPS emission will be skipped');
-    }
+  // ── Trip controls ─────────────────────────────────────────────────────────
+  const handleStart = async () => {
+    if (!tripMeta.cabId) console.warn('[DriverActiveTrip] cabId missing');
     const ok = await startTracking();
     if (ok === false) {
-      Alert.alert(
-        'Location Permission Required',
-        'Please enable location access in your device Settings.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Location Required', 'Please enable location access in Settings.');
       return;
     }
     if (tripId) dispatch(startTrip(tripId));
     setTripStarted(true);
   };
 
-  const handleConfirmAttendance = useCallback((stop) => {
-    if (!tripId || !stop?.id) return;
-    handleStopArrival(stop);
-  }, [tripId, handleStopArrival]);
+  const allDone = stops.filter((s) => !s.isDestination).length > 0 &&
+    stops.filter((s) => !s.isDestination).every((s) => s.status === 'completed' || s.status === 'arrived');
 
-  const allStopsDone =
-    stops.filter((s) => !s.isDestination).length > 0 &&
-    stops.filter((s) => !s.isDestination).every(
-      (s) => s.status === 'completed' || s.status === 'arrived'
-    );
-
-  const handleEndTrip = () => {
-    Alert.alert(
-      'End Trip',
-      'Are you sure you want to end this trip?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'End Trip',
-          style: 'destructive',
-          onPress: () => {
-            stopTracking();
-            if (tripId) dispatch(endTrip({ tripId }));
-            navigation.navigate(SCREENS.TRIP_SUMMARY, {
-              trip: { tripNumber: trip.tripNumber ?? `Trip #${tripId ?? ''}` },
-            });
-          },
+  const handleEnd = () => {
+    Alert.alert('End Trip', 'This will log the trip data. Continue?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'End Trip',
+        style: 'destructive',
+        onPress: () => {
+          stopTracking();
+          if (tripId) dispatch(endTrip({ tripId }));
+          navigation.navigate(SCREENS.TRIP_SUMMARY, { trip });
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const callEmployee = (phone) => {
@@ -395,387 +328,210 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
     Linking.openURL(`tel:${phone}`).catch(() => {});
   };
 
-  // ── Derived display data ─────────────────────────────────────────────────────
-  const nextStop = stops.find((s) => s.status === 'next_stop') ?? stops.find((s) => s.status === 'pending');
-  const tripNumber = trip.tripNumber ?? `Trip #${tripId ?? ''}`;
-  const vehicleNo = trip.vehicle ?? trip.cabNumber ?? '';
+  // ── Map data ──────────────────────────────────────────────────────────────
+  const markers = stops
+    .filter((s) => s.latitude && s.longitude)
+    .map((s, i) => ({
+      id: s.id,
+      latitude: s.latitude,
+      longitude: s.longitude,
+      title: s.name,
+      label: String(i + 1),
+      color: s.status === 'completed' || s.status === 'arrived'
+        ? '#16a34a'
+        : s.status === 'next_stop'
+        ? '#643ee8'
+        : '#9e9aa8',
+      eta: stopETAs[String(s.id)] ?? null,
+    }));
 
-  const mapMarkers = stops.filter(s => s.latitude && s.longitude).map((stop, idx) => ({
-    id: stop.id,
-    latitude: stop.latitude,
-    longitude: stop.longitude,
-    title: stop.name,
-    label: String(idx + 1),
-    color: (stop.status === 'completed' || stop.status === 'arrived')
-      ? '#16a34a'
-      : stop.status === 'next_stop'
-      ? '#643ee8'
-      : '#9e9aa8',
-    eta: stopETAs[String(stop.id)] ?? null,
-  }));
-
-  // Straight-line fallback when OSRM hasn't responded yet
-  const fallbackPolyline = roadPolyline.length === 0
-    ? stops.filter(s => s.latitude && s.longitude).map(s => ({ latitude: s.latitude, longitude: s.longitude }))
+  const fallbackPoly = roadPoly.length === 0
+    ? stops.filter((s) => s.latitude && s.longitude).map((s) => ({ latitude: s.latitude, longitude: s.longitude }))
     : [];
 
-  return (
-    <View style={styles.container}>
-      {/* ── Fullscreen Map ─────────────────────────────────────────────────── */}
-      <CrossPlatformMap
-        style={StyleSheet.absoluteFillObject}
-        region={
-          location
-            ? { latitude: location.latitude, longitude: location.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 }
-            : DEFAULT_REGION
-        }
-        driverLocation={location}
-        markers={mapMarkers}
-        roadRoute={roadPolyline}
-        polyline={fallbackPolyline}
-      />
+  const tripNumber = trip.tripNumber ?? `Trip #${tripId ?? ''}`;
+  const vehicleNo  = trip.vehicle ?? trip.cabNumber ?? '';
 
-      {/* ── Floating header ────────────────────────────────────────────────── */}
-      <SafeAreaView edges={['top']} style={styles.headerWrapper}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+  return (
+    <View style={ss.root}>
+      {/* ────────────────────────── MAP (flex fills remaining space) ── */}
+      <View style={ss.mapBox}>
+        <CrossPlatformMap
+          style={StyleSheet.absoluteFillObject}
+          region={
+            location
+              ? { latitude: location.latitude, longitude: location.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 }
+              : DEFAULT_REGION
+          }
+          driverLocation={location}
+          markers={markers}
+          roadRoute={roadPoly}
+          polyline={fallbackPoly}
+        />
+
+        {/* Floating header over map */}
+        <View style={ss.header}>
+          <TouchableOpacity style={ss.backBtn} onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={20} color="#1a1a2e" />
           </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>{tripNumber}</Text>
-            {vehicleNo ? <Text style={styles.headerSub}>{vehicleNo}</Text> : null}
+          <View style={{ flex: 1, marginHorizontal: 10 }}>
+            <Text style={ss.tripNo}>{tripNumber}</Text>
+            {!!vehicleNo && <Text style={ss.vehicleNo}>{vehicleNo}</Text>}
           </View>
-          <TouchableOpacity style={styles.sosBtn}>
-            <Text style={styles.sosBtnText}>SOS</Text>
+          <TouchableOpacity style={ss.sosBtn}>
+            <Text style={ss.sosTxt}>SOS</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
 
-      {/* ── Bottom sheet ───────────────────────────────────────────────────── */}
-      <Animated.View style={[styles.sheet, { height: sheetAnim }]}>
-        {/* Handle + sheet header */}
-        <View style={styles.sheetHandle} />
+      {/* ─────────────────────── BOTTOM PANEL (fixed height) ── */}
+      <View style={[ss.panel, { backgroundColor: colors.surface }]}>
+        {/* Handle */}
+        <View style={ss.handle} />
 
-        <View style={styles.sheetHeaderRow}>
-          <Text style={[styles.sheetTitle, { color: '#1a1a2e' }]}>Trip Details</Text>
-          {showDetails && (
-            <TouchableOpacity onPress={closeSheet} style={styles.sheetCloseBtn}>
-              <Ionicons name="close" size={20} color="#1a1a2e" />
-            </TouchableOpacity>
-          )}
+        {/* Header */}
+        <View style={ss.panelHead}>
+          <Text style={[ss.panelTitle, { color: colors.text }]}>Trip Details</Text>
+          <Text style={[ss.panelSub, { color: colors.textSecondary }]}>Route Stops</Text>
         </View>
 
-        {/* Route stops label (expanded only) */}
-        {showDetails && (
-          <Text style={styles.routeStopsLabel}>Route Stops</Text>
-        )}
-
-        {/* Collapsed: single next-stop row — tap to expand */}
-        {!showDetails && nextStop && (
-          <TouchableOpacity style={styles.collapsedRow} onPress={openSheet} activeOpacity={0.8}>
-            <View style={[styles.collapsedCircle, { borderColor: '#643ee8', backgroundColor: '#643ee8' }]} />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.collapsedTime}>{nextStop.time}</Text>
-              <Text style={styles.collapsedName}>{nextStop.name}</Text>
-            </View>
-            {/* Stacked avatars */}
-            <View style={styles.avatarStack}>
-              {(nextStop.employees ?? []).slice(0, 3).map((emp, i) => (
-                <View key={emp.id} style={[styles.avatarWrap, { marginLeft: i > 0 ? -8 : 0, zIndex: 3 - i }]}>
-                  <Avatar name={emp.name} size={28} />
-                </View>
-              ))}
-            </View>
-            <Text style={[styles.nextStopBadge, { color: '#643ee8' }]}>Next Stop</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Expanded: full stop list */}
-        {showDetails && (
-          <ScrollView
-            style={styles.stopList}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 8 }}
-          >
-            {stops.map((stop, idx) => (
+        {/* Stop list — scrollable, always visible */}
+        <ScrollView
+          style={ss.list}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 8 }}
+        >
+          {stops.length === 0 ? (
+            <Text style={[ss.emptyTxt, { color: colors.textSecondary }]}>Loading route…</Text>
+          ) : (
+            stops.map((stop, idx) => (
               <StopRow
-                key={stop.id}
+                key={stop.id ?? idx}
                 stop={stop}
                 isLast={idx === stops.length - 1}
                 colors={colors}
-                onCallEmployee={callEmployee}
-                onConfirmAttendance={handleConfirmAttendance}
+                onCall={callEmployee}
+                onConfirmAttendance={() => handleStopArrival(stop)}
               />
-            ))}
-          </ScrollView>
-        )}
-      </Animated.View>
+            ))
+          )}
+        </ScrollView>
 
-      {/* ── Bottom CTA (always visible above sheet) ────────────────────────── */}
-      <SafeAreaView edges={['bottom']} style={styles.ctaWrapper}>
-        <View style={styles.ctaInner}>
+        {/* ── CTA ── */}
+        <View style={[ss.cta, { borderTopColor: colors.borderLight }]}>
           {!tripStarted ? (
-            <SlideToStart
+            <SlideButton
               label="Slide to Start Trip"
-              onComplete={handleStartTrip}
-              color="#643ee8"
+              color={colors.primary}
+              onComplete={handleStart}
+            />
+          ) : allDone ? (
+            <SlideButton
+              label="Slide to End Trip"
+              color="#dc2626"
+              onComplete={handleEnd}
             />
           ) : (
-            <>
-              {!allStopsDone && (
-                <Text style={styles.endTripHint}>Complete all stops to end the trip</Text>
-              )}
-              <TouchableOpacity
-                style={[styles.endTripBtn, { backgroundColor: allStopsDone ? '#dc2626' : '#9ca3af' }]}
-                onPress={allStopsDone ? handleEndTrip : undefined}
-                disabled={!allStopsDone}
-                activeOpacity={allStopsDone ? 0.85 : 1}
-              >
-                <Text style={styles.endTripBtnText}>End Trip</Text>
-              </TouchableOpacity>
-            </>
+            /* In-progress: show a non-interactive status bar */
+            <View style={[ss.inProgressBar, { backgroundColor: colors.primary + '15' }]}>
+              <Ionicons name="navigate-outline" size={16} color={colors.primary} />
+              <Text style={[ss.inProgressTxt, { color: colors.primary }]}>
+                Trip in progress — complete all stops
+              </Text>
+            </View>
           )}
         </View>
-      </SafeAreaView>
+      </View>
     </View>
   );
 };
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
+const ss = StyleSheet.create({
+  root: { flex: 1 },
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0f0f0' },
+  // Map area
+  mapBox: { flex: 1, position: 'relative' },
 
-  // ── Floating header ──
-  headerWrapper: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
+  // Floating header (sits on top of map)
   header: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 8,
     backgroundColor: '#fff',
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.14,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 5,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#f5f4f9',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: '#f5f4f9', alignItems: 'center', justifyContent: 'center',
   },
-  headerCenter: { flex: 1, marginHorizontal: 10 },
-  headerTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
-  headerSub: { fontSize: 12, color: '#6b7280', marginTop: 1 },
+  tripNo:    { fontSize: 14, fontWeight: '700', color: '#1a1a2e' },
+  vehicleNo: { fontSize: 11, color: '#6b7280', marginTop: 1 },
   sosBtn: {
     backgroundColor: '#dc2626',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 11, paddingVertical: 5,
+    borderRadius: 7,
   },
-  sosBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  sosTxt: { color: '#fff', fontWeight: '700', fontSize: 12 },
 
-  // ── Bottom sheet ──
-  sheet: {
-    position: 'absolute',
-    bottom: 80, // above CTA
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
+  // Panel
+  panel: {
+    height: PANEL_HEIGHT,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 10,
     elevation: 8,
     overflow: 'hidden',
   },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#e5e7eb',
-    alignSelf: 'center',
-    marginTop: 10,
-    marginBottom: 4,
+  handle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: '#e5e7eb', alignSelf: 'center',
+    marginTop: 10, marginBottom: 6,
   },
-  sheetHeaderRow: {
+  panelHead: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     paddingHorizontal: 18,
-    paddingVertical: 6,
-  },
-  sheetTitle: { flex: 1, fontSize: 17, fontWeight: '700' },
-  sheetCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#f5f4f9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  routeStopsLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6b7280',
-    paddingHorizontal: 18,
-    marginBottom: 8,
-  },
-
-  // Collapsed next-stop row
-  collapsedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  collapsedCircle: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 2,
-  },
-  collapsedTime: { fontSize: 11, color: '#6b7280' },
-  collapsedName: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
-  nextStopBadge: { fontSize: 13, fontWeight: '700', marginLeft: 8 },
-
-  // Stop list
-  stopList: { flex: 1, paddingHorizontal: 16 },
-
-  // Stop row
-  stopRow: {
-    flexDirection: 'row',
-    marginBottom: 0,
-  },
-
-  // Timeline
-  timeline: {
-    width: 28,
-    alignItems: 'center',
-    paddingTop: 14,
-  },
-  timelineCircle: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  timelineLine: {
-    flex: 1,
-    width: 2,
-    borderLeftWidth: 2,
-    borderStyle: 'dashed',
-    marginTop: 4,
-    marginBottom: 0,
-    minHeight: 24,
-  },
-
-  // Stop content
-  stopContent: {
-    flex: 1,
-    paddingTop: 8,
-    paddingBottom: 12,
-    marginLeft: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  stopHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  stopTime: { fontSize: 11, marginBottom: 1 },
-  stopName: { fontSize: 14, fontWeight: '700' },
-  statusLabel: { fontSize: 12, fontWeight: '700', marginLeft: 8, marginTop: 16 },
-
-  // Stacked avatars
-  avatarStack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 4,
-    marginTop: 12,
-  },
-  avatarWrap: {},
-
-  // Employee list
-  empList: { marginTop: 10, gap: 0 },
-  empRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-  },
-  empName: { fontSize: 14, fontWeight: '500' },
-  empStatusText: { fontSize: 11, marginTop: 2 },
-  callBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-  confirmAttBtn: {
-    marginTop: 10,
-    height: 40,
-    borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmAttBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-
-  // ── Bottom CTA ──
-  ctaWrapper: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  ctaInner: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
     paddingBottom: 8,
+    gap: 8,
   },
-  endTripHint: {
-    fontSize: 12,
-    color: '#9ca3af',
-    textAlign: 'center',
-    marginBottom: 8,
+  panelTitle: { fontSize: 17, fontWeight: '700' },
+  panelSub:   { fontSize: 12, fontWeight: '500' },
+
+  list: { flex: 1, paddingHorizontal: 14 },
+  emptyTxt: { textAlign: 'center', paddingVertical: 20, fontSize: 13 },
+
+  // CTA
+  cta: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: 1,
   },
-  endTripBtn: {
-    height: 54,
-    borderRadius: 14,
+  inProgressBar: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    height: 44,
+    borderRadius: 12,
   },
-  endTripBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  inProgressTxt: { fontSize: 13, fontWeight: '600' },
 
-  // SlideToStart
+  // Slide button
   slideTrack: {
     height: THUMB_SIZE + 8,
     borderRadius: (THUMB_SIZE + 8) / 2,
@@ -786,20 +542,59 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
-  slideLabel: { fontSize: 16, fontWeight: '500', position: 'absolute' },
+  slideLabel: { fontSize: 15, fontWeight: '500', position: 'absolute' },
   slideThumb: {
-    position: 'absolute',
-    left: 4,
-    width: THUMB_SIZE,
-    height: THUMB_SIZE,
+    position: 'absolute', left: 4,
+    width: THUMB_SIZE, height: THUMB_SIZE,
     borderRadius: THUMB_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2, shadowRadius: 6, elevation: 4,
+  },
+
+  // Stop row
+  row: { flexDirection: 'row', minHeight: 48 },
+
+  // Timeline
+  tl:   { width: 28, alignItems: 'center', paddingTop: 12 },
+  dot: {
+    width: 18, height: 18, borderRadius: 9,
+    borderWidth: 2.5, alignItems: 'center', justifyContent: 'center',
+  },
+  line: {
+    flex: 1, width: 2, marginTop: 4, minHeight: 16,
+    borderLeftWidth: 2, borderStyle: 'dashed',
+  },
+
+  // Content
+  content: {
+    flex: 1,
+    paddingTop: 8, paddingBottom: 10,
+    marginLeft: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  rowHead:     { flexDirection: 'row', alignItems: 'flex-start' },
+  stopTime:    { fontSize: 11, marginBottom: 1 },
+  stopName:    { fontSize: 13, fontWeight: '700' },
+  avatarRow:   { flexDirection: 'row', alignItems: 'center', marginHorizontal: 6, marginTop: 10 },
+  statusBadge: { fontSize: 11, fontWeight: '700', marginTop: 12, marginLeft: 4 },
+
+  // Employee block
+  empBlock: { marginTop: 8, gap: 0 },
+  empRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    gap: 10,
+  },
+  empName: { flex: 1, fontSize: 13, fontWeight: '500' },
+  callBtn: {
+    width: 34, height: 34, borderRadius: 9, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  outcomePill: {
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999,
   },
 });
 

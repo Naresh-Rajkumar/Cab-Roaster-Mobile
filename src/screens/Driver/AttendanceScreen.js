@@ -1,3 +1,12 @@
+/**
+ * AttendanceScreen — Figma Driver Handoff "Attendance"
+ *
+ * Layout:
+ *   • Header: "Confirm Attendance" + "StopName (Nth Stop)"
+ *   • Arc progress ring: X/Y Boarded
+ *   • Employee cards: Avatar | Boarded/No-Show chip | Name | time | toggle
+ *   • "Confirm & Continue" sticky footer button
+ */
 import React, { useState } from 'react';
 import {
   View,
@@ -18,44 +27,121 @@ import { fetchTripStops } from '../../redux/slices/tripSlice';
 import { useTrackingSocket } from '../../hooks/useTrackingSocket';
 import { tripService } from '../../services/api/tripService';
 
+// ─── Arc progress ring (no SVG needed) ───────────────────────────────────────
+// Uses the "two-clipped-halves" technique: right clip shows 0–180°, left shows 180–360°
+const ArcRing = ({ count, total, color = '#643ee8', size = 120, sw = 11 }) => {
+  const pct   = total > 0 ? Math.min(1, count / total) : 0;
+  const half  = size / 2;
+  const inner = size - sw * 2;
+  const track = '#ede9fe';
+
+  // Right half: rotates from -90° (12 o'clock) to +90° (6 o'clock) = 0–50%
+  const rDeg  = Math.min(pct, 0.5) * 360;         // 0–180
+  // Left half: rotates from -90° further = 50–100%
+  const lDeg  = pct > 0.5 ? (pct - 0.5) * 360 : 0; // 0–180
+
+  return (
+    <View style={{ width: size, height: size }}>
+      {/* Background track */}
+      <View style={{
+        position: 'absolute', width: size, height: size,
+        borderRadius: half, borderWidth: sw, borderColor: track,
+      }} />
+
+      {/* Right arc (0–50%) — clips right half, rotates the full ring inside */}
+      {pct > 0 && (
+        <View style={{
+          position: 'absolute', overflow: 'hidden',
+          width: half, height: size, right: 0, top: 0,
+        }}>
+          <View style={{
+            position: 'absolute', width: size, height: size, right: 0,
+            borderRadius: half, borderWidth: sw, borderColor: color,
+            transform: [{ rotate: `${rDeg}deg` }],
+          }} />
+        </View>
+      )}
+
+      {/* Left arc (50–100%) — clips left half */}
+      {lDeg > 0 && (
+        <View style={{
+          position: 'absolute', overflow: 'hidden',
+          width: half, height: size, left: 0, top: 0,
+        }}>
+          <View style={{
+            position: 'absolute', width: size, height: size, left: 0,
+            borderRadius: half, borderWidth: sw, borderColor: color,
+            transform: [{ rotate: `${lDeg}deg` }],
+          }} />
+        </View>
+      )}
+
+      {/* White inner circle — creates the donut hole */}
+      <View style={{
+        position: 'absolute',
+        top: sw, left: sw,
+        width: inner, height: inner,
+        borderRadius: inner / 2,
+        backgroundColor: '#fff',
+        alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Text style={{ fontSize: size * 0.20, fontWeight: '800', color: '#1a1a2e' }}>
+          {count}/{total}
+        </Text>
+        <Text style={{ fontSize: size * 0.095, color: '#6b7280', marginTop: 2 }}>
+          Boarded
+        </Text>
+      </View>
+    </View>
+  );
+};
+
+// ─── Employee card ────────────────────────────────────────────────────────────
 const EmployeeCard = ({ emp, primaryColor, colors, onToggle }) => (
   <View style={[styles.card, { borderBottomColor: colors.borderLight }]}>
-    <Avatar name={emp.name} size={46} />
+    <Avatar name={emp.name} size={48} />
     <View style={styles.cardBody}>
-      <View style={[styles.statusChip, { backgroundColor: emp.boarded ? '#e8f6ed' : '#fce8e8' }]}>
-        <Text style={[styles.statusChipText, { color: emp.boarded ? '#16a34a' : '#dc2626' }]}>
+      <View style={[
+        styles.chip,
+        { backgroundColor: emp.boarded ? '#dcfce7' : '#fee2e2' },
+      ]}>
+        <Text style={[styles.chipTxt, { color: emp.boarded ? '#16a34a' : '#dc2626' }]}>
           {emp.boarded ? 'Boarded' : 'No Show'}
         </Text>
       </View>
       <Text style={[styles.cardName, { color: colors.text }]}>{emp.name}</Text>
-      <View style={styles.timeRow}>
-        <Ionicons name="time-outline" size={12} color={colors.textTertiary} />
-        <Text style={[styles.cardTime, { color: colors.textSecondary }]}>{emp.time}</Text>
-      </View>
+      {emp.time ? (
+        <View style={styles.timeRow}>
+          <Ionicons name="time-outline" size={11} color={colors.textTertiary} />
+          <Text style={[styles.cardTime, { color: colors.textSecondary }]}>{emp.time}</Text>
+        </View>
+      ) : null}
     </View>
     <Switch
       value={emp.boarded}
-      onValueChange={(val) => onToggle(emp.id, val)}
+      onValueChange={(v) => onToggle(emp.id, v)}
       trackColor={{ false: colors.border, true: primaryColor }}
-      thumbColor="#ffffff"
+      thumbColor="#fff"
       ios_backgroundColor={colors.border}
     />
   </View>
 );
 
-const ordinalSuffix = (n) => {
+// ─── Ordinal helper ───────────────────────────────────────────────────────────
+const ordinal = (n) => {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
-  return s[(v - 20) % 10] || s[v] || s[0];
+  return (s[(v - 20) % 10] || s[v] || s[0]);
 };
 
+// ─── Screen ───────────────────────────────────────────────────────────────────
 const AttendanceScreen = ({ navigation, route }) => {
-  const { theme } = useTheme();
-  const colors = theme.colors;
-  const dispatch = useDispatch();
+  const { theme }  = useTheme();
+  const colors     = theme.colors;
+  const dispatch   = useDispatch();
 
   const stopData = route?.params?.stop ?? {};
-  const tripId = route?.params?.tripId ?? null;
+  const tripId   = route?.params?.tripId ?? null;
 
   const { emitStopArrival } = useTrackingSocket();
 
@@ -68,97 +154,88 @@ const AttendanceScreen = ({ navigation, route }) => {
   const [confirming, setConfirming] = useState(false);
 
   const boardedCount = employees.filter((e) => e.boarded).length;
-  const total = employees.length;
-  const stopId = stopData.id ?? stopData.stopId;
-  const stopNo = stopData.stopNumber ?? stopData.number ?? 1;
-  const stopName = stopData.stopName ?? stopData.name ?? 'Stop';
+  const total        = employees.length;
+  const stopId       = stopData.id ?? stopData.stopId;
+  const stopNo       = stopData.stopNumber ?? stopData.number ?? 1;
+  const stopName     = stopData.stopName ?? stopData.name ?? 'Stop';
 
-  const toggle = (id, val) => {
+  const toggle = (id, val) =>
     setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, boarded: val } : e)));
-  };
 
   const handleConfirm = async () => {
     if (!tripId || !stopId) {
       Alert.alert('Error', 'Trip or stop information is missing.');
       return;
     }
-
     setConfirming(true);
     try {
-      // 1. Mark stop as arrived (backend records arrival + notifies employees via socket/push)
+      // 1. Record stop arrival on backend
       await tripService.arriveAtStop(tripId, stopId);
 
-      // 2. Save per-employee boarding status
-      const employeeStatuses = employees.map((e) => ({
+      // 2. Save boarding status per employee
+      const statuses = employees.map((e) => ({
         employeeId: e.id,
         status: e.boarded ? 'picked_up' : 'no_show',
       }));
-      await tripService.updateEmployeeBoarding(tripId, stopId, employeeStatuses).catch(() => {
-        // Non-fatal: boarding status is best-effort if the endpoint is not yet implemented
-        console.warn('[AttendanceScreen] updateEmployeeBoarding failed — may not be implemented on BE yet');
+      await tripService.updateEmployeeBoarding(tripId, stopId, statuses).catch(() => {
+        console.warn('[Attendance] updateEmployeeBoarding not yet on BE — skipped');
       });
 
-      // 3. Emit socket event so employees receive instant notification
-      //    (backend also does this via arriveAtStop, but socket is lower latency)
+      // 3. Emit socket so employees get real-time notification
       emitStopArrival({ tripId, stopId, cabId: null, driverId: null });
 
-      // 4. Refresh stop list in Redux so DriverActiveTripScreen shows updated status
+      // 4. Refresh Redux stops → DriverActiveTripScreen goes green for this stop
       dispatch(fetchTripStops(tripId));
 
-      Alert.alert(
-        'Attendance Confirmed',
-        `${boardedCount} of ${total} employees boarded at ${stopName}.`,
-        [{ text: 'Continue', onPress: () => navigation.goBack() }]
-      );
+      // 5. Go back — focus listener on DriverActiveTripScreen re-fetches stops
+      navigation.goBack();
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to confirm arrival. Please try again.');
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to confirm. Please try again.');
     } finally {
       setConfirming(false);
     }
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.borderLight }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
-        <View style={styles.headerText}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Confirm Attendance</Text>
-          <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
-            {stopName} ({stopNo}{ordinalSuffix(stopNo)} Stop)
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.title, { color: colors.text }]}>Confirm Attendance</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            {stopName} ({stopNo}{ordinal(stopNo)} Stop)
           </Text>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Progress ring */}
-        <View style={styles.ringWrapper}>
-          <View style={[styles.ring, {
-            borderTopColor: colors.primary,
-            borderLeftColor: colors.primary,
-            borderBottomColor: colors.border,
-            borderRightColor: colors.border,
-          }]}>
-            <Text style={[styles.ringCount, { color: colors.text }]}>{boardedCount}/{total}</Text>
-            <Text style={[styles.ringLabel, { color: colors.textSecondary }]}>Boarded</Text>
-          </View>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Arc ring */}
+        <View style={styles.ringWrap}>
+          <ArcRing count={boardedCount} total={total} color={colors.primary} />
         </View>
 
+        {/* Employee cards */}
         {total === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="people-outline" size={48} color={colors.textTertiary} />
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No employees assigned to this stop
+          <View style={styles.empty}>
+            <Ionicons name="people-outline" size={46} color={colors.textTertiary} />
+            <Text style={[styles.emptyTxt, { color: colors.textSecondary }]}>
+              No employees at this stop
             </Text>
           </View>
         ) : (
           <View style={[styles.listCard, { backgroundColor: colors.surface }]}>
-            {employees.map((emp, idx) => (
+            {employees.map((emp, i) => (
               <View key={emp.id}>
-                <EmployeeCard emp={emp} primaryColor={colors.primary} colors={colors} onToggle={toggle} />
-                {idx < employees.length - 1 && (
+                <EmployeeCard
+                  emp={emp}
+                  primaryColor={colors.primary}
+                  colors={colors}
+                  onToggle={toggle}
+                />
+                {i < employees.length - 1 && (
                   <View style={[styles.sep, { backgroundColor: colors.borderLight }]} />
                 )}
               </View>
@@ -172,13 +249,13 @@ const AttendanceScreen = ({ navigation, route }) => {
         <TouchableOpacity
           style={[styles.confirmBtn, { backgroundColor: confirming ? colors.textTertiary : colors.primary }]}
           onPress={handleConfirm}
-          activeOpacity={0.85}
           disabled={confirming}
+          activeOpacity={0.85}
         >
           {confirming ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.confirmBtnText}>Confirm & Continue</Text>
+            <Text style={styles.confirmTxt}>Confirm &amp; Continue</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -186,74 +263,55 @@ const AttendanceScreen = ({ navigation, route }) => {
   );
 };
 
+// ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  root: { flex: 1 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    gap: 10,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, gap: 10,
   },
   backBtn: { padding: 4 },
-  headerText: { flex: 1 },
-  headerTitle: { fontSize: 20, fontWeight: '700' },
-  headerSub: { fontSize: 14, marginTop: 2 },
-  scrollContent: { paddingBottom: 120, paddingHorizontal: 16 },
-  ringWrapper: { alignItems: 'center', marginVertical: 28 },
-  ring: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    borderWidth: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ringCount: { fontSize: 26, fontWeight: '800' },
-  ringLabel: { fontSize: 12, fontWeight: '500', marginTop: 2 },
-  emptyState: { alignItems: 'center', paddingVertical: 40, gap: 12 },
-  emptyText: { fontSize: 14 },
+  title:    { fontSize: 20, fontWeight: '700' },
+  subtitle: { fontSize: 13, marginTop: 2 },
+
+  scroll:  { paddingBottom: 120, paddingHorizontal: 16 },
+  ringWrap: { alignItems: 'center', marginVertical: 28 },
+
+  empty:    { alignItems: 'center', paddingVertical: 40, gap: 12 },
+  emptyTxt: { fontSize: 14 },
+
   listCard: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    borderRadius: 16, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 12,
-    backgroundColor: '#ffffff',
+    flexDirection: 'row', alignItems: 'center',
+    padding: 16, gap: 12, backgroundColor: '#fff',
   },
   cardBody: { flex: 1, gap: 3 },
-  statusChip: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 },
-  statusChipText: { fontSize: 11, fontWeight: '700' },
+  chip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8, paddingVertical: 2,
+    borderRadius: 999,
+  },
+  chipTxt:  { fontSize: 11, fontWeight: '700' },
   cardName: { fontSize: 15, fontWeight: '700' },
-  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  timeRow:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
   cardTime: { fontSize: 12 },
-  sep: { height: 1, marginHorizontal: 16 },
+  sep:      { height: 1, marginHorizontal: 16 },
+
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 16,
-    paddingBottom: 32,
-    paddingTop: 12,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    paddingHorizontal: 16, paddingBottom: 32, paddingTop: 12,
     borderTopWidth: 1,
   },
   confirmBtn: {
-    height: 54,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+    height: 54, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
   },
-  confirmBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  confirmTxt: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
 
 export default AttendanceScreen;
