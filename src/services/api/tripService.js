@@ -22,6 +22,13 @@ const realTripService = {
   getNextTrip: () => axiosInstance.get('/trips/my-trips', { params: { status: 'Upcoming', limit: 1 } }),
   // Returns the employee's currently active trip (driver has started it)
   getMyCurrentRide: () => axiosInstance.get('/trips/my-trips', { params: { status: 'in_progress', limit: 1 } }),
+  // Driver: save per-employee boarding status after arriving at a stop
+  // employees: [{ employeeId, status: 'picked_up' | 'no_show' }]
+  updateEmployeeBoarding: (tripId, stopId, employees) =>
+    axiosInstance.post(`/trips/${tripId}/stops/${stopId}/boarding`, { employees }),
+  // Employee: confirm they boarded the cab at their stop
+  confirmBoarding: (tripId, stopId) =>
+    axiosInstance.post(`/trips/${tripId}/stops/${stopId}/confirm-boarding`),
 };
 
 export const tripService = USE_MOCK ? mockTripService : realTripService;

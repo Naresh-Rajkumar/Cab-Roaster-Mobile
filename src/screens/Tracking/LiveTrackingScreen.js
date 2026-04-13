@@ -46,9 +46,12 @@ function stopDisplay(status) {
 }
 
 // ─── Live Map Component ───────────────────────────────────────────────────────
-const LiveMap = ({ cabLocation, trail, mapStatus, colors }) => (
+// mapRef is forwarded to CrossPlatformMap → NativeMap → MapView so that
+// animateMapTo() can call mapRef.current.animateToRegion() as GPS updates arrive.
+const LiveMap = ({ cabLocation, trail, mapStatus, colors, mapRef }) => (
   <View style={styles.mapView}>
     <CrossPlatformMap
+      ref={mapRef}
       style={StyleSheet.absoluteFillObject}
       region={cabLocation
         ? { latitude: cabLocation.latitude, longitude: cabLocation.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 }
@@ -111,7 +114,8 @@ const LiveTrackingScreen = ({ navigation, route }) => {
   // ─── Socket event handlers ─────────────────────────────────────────────────
 
   const handleActiveCabs = useCallback((cabs) => {
-    if (!currentRide?.vehicleNo) return;
+    // Need at least one identifier to match the cab
+    if (!currentRide?.vehicleNo && !currentRide?.cabId) return;
     const list = Array.isArray(cabs) ? cabs : [];
 
     // Find our cab by vehicleNo (cabReg) or cabId
@@ -201,6 +205,22 @@ const LiveTrackingScreen = ({ navigation, route }) => {
     );
   }, []);
 
+  // ─── driver_at_stop handler — employee sees CabArrivedScreen ─────────────────
+  const handleDriverAtStop = useCallback((data) => {
+    // Only react if this event is for our current trip
+    const ourTripId = String(currentRide?.id ?? currentRide?.tripId ?? '');
+    if (!ourTripId || String(data.tripId) !== ourTripId) return;
+
+    navigation.navigate(SCREENS.CAB_ARRIVED, {
+      driverName: currentRide?.driverName ?? 'Driver',
+      vehicleNo: currentRide?.vehicleNo ?? '',
+      vehicleType: currentRide?.vehicleType ?? '',
+      tripId: data.tripId,
+      stopId: data.stopId,
+      cabLocation: cabLocation, // last known live position
+    });
+  }, [currentRide, cabLocation, navigation]);
+
   // ─── Attach / detach socket listeners ────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
@@ -209,6 +229,7 @@ const LiveTrackingScreen = ({ navigation, route }) => {
     socket.on('cab_location_update', handleCabLocationUpdate);
     socket.on('cab_detail', handleCabDetail);
     socket.on('cab_offline', handleCabOffline);
+    socket.on('driver_at_stop', handleDriverAtStop);
 
     if (connected) {
       getActiveCabs();
@@ -219,8 +240,9 @@ const LiveTrackingScreen = ({ navigation, route }) => {
       socket.off('cab_location_update', handleCabLocationUpdate);
       socket.off('cab_detail', handleCabDetail);
       socket.off('cab_offline', handleCabOffline);
+      socket.off('driver_at_stop', handleDriverAtStop);
     };
-  }, [socket, connected, handleActiveCabs, handleCabLocationUpdate, handleCabDetail, handleCabOffline, getActiveCabs]);
+  }, [socket, connected, handleActiveCabs, handleCabLocationUpdate, handleCabDetail, handleCabOffline, handleDriverAtStop, getActiveCabs]);
 
   // Re-request active cabs when connection is established
   useEffect(() => {
@@ -228,6 +250,15 @@ const LiveTrackingScreen = ({ navigation, route }) => {
       getActiveCabs();
     }
   }, [connected, socket, getActiveCabs]);
+
+  // Re-request active cabs when currentRide first loads — the socket may have
+  // already connected and fired active_cabs before ride data was available,
+  // causing the cab-matching handler to return early (race condition)
+  useEffect(() => {
+    if (connected && socket && currentRide?.id) {
+      getActiveCabs();
+    }
+  }, [currentRide?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup: unwatch cab on unmount
   useEffect(() => {

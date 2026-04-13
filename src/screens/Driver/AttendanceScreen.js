@@ -7,13 +7,16 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useDispatch } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Avatar } from '../../components';
-import { updateStopHandoff } from '../../redux/slices/driverSlice';
+import { fetchTripStops } from '../../redux/slices/tripSlice';
+import { useTrackingSocket } from '../../hooks/useTrackingSocket';
+import { tripService } from '../../services/api/tripService';
 
 const EmployeeCard = ({ emp, primaryColor, colors, onToggle }) => (
   <View style={[styles.card, { borderBottomColor: colors.borderLight }]}>
@@ -50,7 +53,11 @@ const AttendanceScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
   const dispatch = useDispatch();
+
   const stopData = route?.params?.stop ?? {};
+  const tripId = route?.params?.tripId ?? null;
+
+  const { emitStopArrival } = useTrackingSocket();
 
   const [employees, setEmployees] = useState(
     (stopData.employees ?? []).map((e) => ({
@@ -58,9 +65,11 @@ const AttendanceScreen = ({ navigation, route }) => {
       boarded: e.boarded ?? e.status === 'picked_up',
     }))
   );
+  const [confirming, setConfirming] = useState(false);
 
   const boardedCount = employees.filter((e) => e.boarded).length;
   const total = employees.length;
+  const stopId = stopData.id ?? stopData.stopId;
   const stopNo = stopData.stopNumber ?? stopData.number ?? 1;
   const stopName = stopData.stopName ?? stopData.name ?? 'Stop';
 
@@ -68,16 +77,44 @@ const AttendanceScreen = ({ navigation, route }) => {
     setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, boarded: val } : e)));
   };
 
-  const handleConfirm = () => {
-    const stopId = stopData.id ?? stopData.stopId;
-    if (stopId) {
-      dispatch(updateStopHandoff({ stopId, employeeId: null, status: 'arrived' }));
+  const handleConfirm = async () => {
+    if (!tripId || !stopId) {
+      Alert.alert('Error', 'Trip or stop information is missing.');
+      return;
     }
-    Alert.alert(
-      'Attendance Confirmed',
-      `${boardedCount} of ${total} employees boarded at ${stopName}.`,
-      [{ text: 'Continue', onPress: () => navigation.goBack() }]
-    );
+
+    setConfirming(true);
+    try {
+      // 1. Mark stop as arrived (backend records arrival + notifies employees via socket/push)
+      await tripService.arriveAtStop(tripId, stopId);
+
+      // 2. Save per-employee boarding status
+      const employeeStatuses = employees.map((e) => ({
+        employeeId: e.id,
+        status: e.boarded ? 'picked_up' : 'no_show',
+      }));
+      await tripService.updateEmployeeBoarding(tripId, stopId, employeeStatuses).catch(() => {
+        // Non-fatal: boarding status is best-effort if the endpoint is not yet implemented
+        console.warn('[AttendanceScreen] updateEmployeeBoarding failed — may not be implemented on BE yet');
+      });
+
+      // 3. Emit socket event so employees receive instant notification
+      //    (backend also does this via arriveAtStop, but socket is lower latency)
+      emitStopArrival({ tripId, stopId, cabId: null, driverId: null });
+
+      // 4. Refresh stop list in Redux so DriverActiveTripScreen shows updated status
+      dispatch(fetchTripStops(tripId));
+
+      Alert.alert(
+        'Attendance Confirmed',
+        `${boardedCount} of ${total} employees boarded at ${stopName}.`,
+        [{ text: 'Continue', onPress: () => navigation.goBack() }]
+      );
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to confirm arrival. Please try again.');
+    } finally {
+      setConfirming(false);
+    }
   };
 
   return (
@@ -109,27 +146,40 @@ const AttendanceScreen = ({ navigation, route }) => {
           </View>
         </View>
 
-        {/* Employee list */}
-        <View style={[styles.listCard, { backgroundColor: colors.surface }]}>
-          {employees.map((emp, idx) => (
-            <View key={emp.id}>
-              <EmployeeCard emp={emp} primaryColor={colors.primary} colors={colors} onToggle={toggle} />
-              {idx < employees.length - 1 && (
-                <View style={[styles.sep, { backgroundColor: colors.borderLight }]} />
-              )}
-            </View>
-          ))}
-        </View>
+        {total === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="people-outline" size={48} color={colors.textTertiary} />
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No employees assigned to this stop
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.listCard, { backgroundColor: colors.surface }]}>
+            {employees.map((emp, idx) => (
+              <View key={emp.id}>
+                <EmployeeCard emp={emp} primaryColor={colors.primary} colors={colors} onToggle={toggle} />
+                {idx < employees.length - 1 && (
+                  <View style={[styles.sep, { backgroundColor: colors.borderLight }]} />
+                )}
+              </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
 
       {/* Footer */}
       <View style={[styles.footer, { backgroundColor: colors.surface, borderTopColor: colors.borderLight }]}>
         <TouchableOpacity
-          style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
+          style={[styles.confirmBtn, { backgroundColor: confirming ? colors.textTertiary : colors.primary }]}
           onPress={handleConfirm}
           activeOpacity={0.85}
+          disabled={confirming}
         >
-          <Text style={styles.confirmBtnText}>Confirm & Continue</Text>
+          {confirming ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.confirmBtnText}>Confirm & Continue</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -162,6 +212,8 @@ const styles = StyleSheet.create({
   },
   ringCount: { fontSize: 26, fontWeight: '800' },
   ringLabel: { fontSize: 12, fontWeight: '500', marginTop: 2 },
+  emptyState: { alignItems: 'center', paddingVertical: 40, gap: 12 },
+  emptyText: { fontSize: 14 },
   listCard: {
     borderRadius: 16,
     overflow: 'hidden',

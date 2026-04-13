@@ -18,6 +18,9 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Tests / Sonar
+coverage/
+
 # Metro
 .metro-health-check*
 

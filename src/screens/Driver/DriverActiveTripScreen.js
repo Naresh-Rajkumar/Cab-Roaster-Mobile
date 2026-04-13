@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -147,18 +147,56 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
   const activeTrip = useSelector((state) => state.driver.activeTrip);
   const user = useSelector((state) => state.auth.user);
 
-  // Socket.IO — emit GPS while trip is active
-  const { emitLocation, connected: socketConnected } = useTrackingSocket();
+  // Local stops state — must be declared BEFORE any code that references stops/tripStarted
+  const [stops, setStops] = useState([]);
+  const [tripStarted, setTripStarted] = useState(false);
+
+  // Socket.IO — emit GPS + stop-arrival events while trip is active
+  const { emitLocation, emitStopArrival, connected: socketConnected } = useTrackingSocket();
   const tripMeta = {
     cabId: trip?.cabId ?? activeTrip?.cabId ?? null,
     driverId: user?.id ?? null,
     tripId: tripId ?? null,
   };
-  const { location, isTracking, startTracking, stopTracking } = useDriverLocation(emitLocation, tripMeta);
 
-  // Local stops state (synced from Redux, allows in-screen status updates)
-  const [stops, setStops] = useState([]);
-  const [tripStarted, setTripStarted] = useState(false);
+  // Guard: prevent the same stop from triggering the attendance screen twice
+  // (driver may linger inside the radius across multiple GPS updates)
+  const openedAttendanceForRef = useRef(new Set());
+
+  /**
+   * Called by useDriverLocation when GPS enters a stop's arrival radius.
+   * Emits the driver_at_stop socket event (backend relays to employees)
+   * and opens the AttendanceScreen so the driver can mark who boarded.
+   */
+  const handleStopArrival = useCallback((stop) => {
+    if (!stop?.id) return;
+    if (openedAttendanceForRef.current.has(String(stop.id))) return;
+    openedAttendanceForRef.current.add(String(stop.id));
+
+    // Notify backend → employees via socket
+    emitStopArrival({
+      tripId: tripId ?? null,
+      stopId: stop.id,
+      cabId: tripMeta.cabId,
+      driverId: tripMeta.driverId,
+    });
+
+    // Open attendance screen
+    navigation.navigate(SCREENS.ATTENDANCE, {
+      stop: { ...stop, stopNumber: stops.findIndex((s) => s.id === stop.id) + 1 },
+      tripId,
+    });
+  }, [emitStopArrival, tripId, tripMeta, navigation, stops]);
+
+  // Only run proximity detection on pickup/drop stops, not the destination
+  const trackableStops = stops.filter((s) => !s.isDestination && (s.latitude || s.longitude));
+
+  const { location, isTracking, startTracking, stopTracking } = useDriverLocation(
+    emitLocation,
+    tripMeta,
+    tripStarted ? trackableStops : [], // only check proximity when trip is active
+    handleStopArrival,
+  );
 
   // Load stops from API when screen mounts
   useEffect(() => {
@@ -184,28 +222,35 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
     totalStops: stops.filter((s) => !s.isDestination).length,
   };
 
-  const handleStartTrip = () => {
+  const handleStartTrip = async () => {
+    // Warn early if cabId is missing — location will not be emitted to backend
+    if (!tripMeta.cabId) {
+      console.warn('[DriverActiveTrip] cabId is missing on trip start — socket location emission will be skipped');
+    }
+
+    const permissionOk = await startTracking();
+
+    if (permissionOk === false) {
+      // startTracking returns false when location permission is denied
+      Alert.alert(
+        'Location Permission Required',
+        'Please enable location access for this app in your device Settings so your position can be tracked during the trip.',
+        [{ text: 'OK' }]
+      );
+      return; // Don't mark trip as started without location
+    }
+
     if (tripId) {
       dispatch(startTrip(tripId));
     }
     setTripStarted(true);
-    // Start emitting GPS location to backend via socket
-    startTracking();
   };
 
-  const handleConfirmAttendance = (stop) => {
-    if (!tripId || !stop.id) return;
-    // Call arrive-at-stop API, then refresh stops
-    import('../../services/api/tripService').then(({ tripService }) => {
-      tripService.arriveAtStop(tripId, stop.id)
-        .then(() => {
-          dispatch(fetchTripStops(tripId));
-        })
-        .catch((err) => {
-          Alert.alert('Error', err?.response?.data?.message || 'Failed to confirm arrival');
-        });
-    });
-  };
+  // Manual "Confirm Attendance" button in the stop card — same flow as proximity trigger
+  const handleConfirmAttendance = useCallback((stop) => {
+    if (!tripId || !stop?.id) return;
+    handleStopArrival(stop);
+  }, [tripId, handleStopArrival]);
 
   const handleEndTrip = () => {
     Alert.alert(

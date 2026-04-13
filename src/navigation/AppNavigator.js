@@ -19,7 +19,6 @@ import ReportIssueScreen from '../screens/Requests/ReportIssueScreen';
 import RequestCabStep1Screen from '../screens/Requests/RequestCabStep1Screen';
 import RequestCabStep2Screen from '../screens/Requests/RequestCabStep2Screen';
 import { useTheme } from '../theme/ThemeProvider';
-import { useTrackingSocket } from '../hooks/useTrackingSocket';
 import { SCREENS } from '../constants';
 
 const Tab = createBottomTabNavigator();
@@ -61,9 +60,6 @@ const MoreNavigator = () => (
 const AppNavigator = () => {
   const { theme } = useTheme();
   const colors = theme.colors;
-
-  // Connect socket at app level for real-time notifications
-  useTrackingSocket();
 
   return (
     <Tab.Navigator

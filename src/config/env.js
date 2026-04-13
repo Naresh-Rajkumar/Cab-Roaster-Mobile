@@ -17,7 +17,7 @@
 export const USE_MOCK = false;
 
 // LAN fallback when EXPO_PUBLIC_API_BASE_URL is unset — must match Cabroster-BE `PORT` in .env (default 4000 in .env.example).
-const FALLBACK_LAN_API_BASE = 'http://192.168.2.156:4001/api/v1';
+const FALLBACK_LAN_API_BASE = 'http://192.168.2.68:4001/api/v1';
 
 function resolveApiBaseUrl() {
   const raw = process.env.EXPO_PUBLIC_API_BASE_URL;

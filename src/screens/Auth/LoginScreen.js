@@ -22,6 +22,7 @@ import { SCREENS } from '../../constants';
 import { loginUser } from '../../redux/slices/authSlice';
 import { setAuthToken } from '../../services/axiosConfig';
 import axiosInstance from '../../services/axiosConfig';
+import { makeRedirectUri } from 'expo-auth-session';
 
 // Azure AD config
 const AZURE_TENANT_ID = '3bc90aa9-088f-4447-9eb2-ff13839e19dd';
@@ -125,7 +126,8 @@ const LoginScreen = ({ navigation }) => {
       setMsLoading(true);
       const redirectUri = Platform.OS === 'web'
         ? window.location.origin
-        : 'vcommute://auth';
+        : makeRedirectUri({ scheme: 'vcommute', path: 'auth' });
+      console.log('[MS Auth] Redirect URI:', redirectUri);
       const nonce = Math.random().toString(36).substring(2);
       const authUrl =
         `${MS_AUTH_URL}?client_id=${AZURE_CLIENT_ID}` +

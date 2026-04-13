@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,6 @@ import { fetchCurrentRide, fetchTrips } from '../../redux/slices/tripSlice';
 import { Avatar, StatusBadge, CrossPlatformMap } from '../../components';
 import { SCREENS } from '../../constants';
 import { getGreeting } from '../../utils';
-import { useTrackingSocket } from '../../hooks/useTrackingSocket';
 
 const QUICK_ACTIONS = [
   {
@@ -242,21 +241,31 @@ const HomeScreen = ({ navigation }) => {
   const firstName = user?.firstName ?? user?.displayName?.split(' ')[0] ?? user?.name?.split(' ')[0] ?? 'Guest';
   const [cabArrivedData, setCabArrivedData] = useState(null);
 
-  // Listen for cab arrived notification via WebSocket
-  useTrackingSocket({
-    onNotification: useCallback((event) => {
-      if (event?.title?.toLowerCase().includes('arrived') || event?.title?.toLowerCase().includes('approaching')) {
-        setCabArrivedData({
-          driverName: currentRide?.driver?.name || 'Driver',
-          cabNumber: currentRide?.vehicle || '',
-          cabType: currentRide?.vehicleType || '',
-          stopName: event.body || 'your stop',
-        });
-      }
-      // Also refresh ride data on any notification
+  // SocketProvider (App.js) dispatches all notification_received events to Redux.
+  // Watch the notifications array for cab-arrival events so we can show the modal.
+  const notifications = useSelector((state) => state.app.notifications);
+  const lastProcessedNotifId = useRef(null);
+
+  useEffect(() => {
+    if (!notifications.length) return;
+    const latest = notifications[0]; // addNotification uses unshift → [0] is newest
+    if (!latest || latest.id === lastProcessedNotifId.current) return;
+    lastProcessedNotifId.current = latest.id;
+
+    const isArrival =
+      latest.title?.toLowerCase().includes('arrived') ||
+      latest.title?.toLowerCase().includes('approaching');
+
+    if (isArrival) {
+      setCabArrivedData({
+        driverName: currentRide?.driver?.name || currentRide?.driverName || 'Driver',
+        cabNumber: currentRide?.vehicleNo || currentRide?.vehicle || '',
+        cabType: currentRide?.vehicleType || '',
+        stopName: latest.body || 'your stop',
+      });
       dispatch(fetchCurrentRide());
-    }, [currentRide, dispatch]),
-  });
+    }
+  }, [notifications, currentRide, dispatch]);
 
   useEffect(() => {
     dispatch(fetchCurrentRide());

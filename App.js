@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import store from './src/redux/store';
 import { ThemeProvider } from './src/theme/ThemeProvider';
+import { SocketProvider } from './src/context/SocketContext';
 import RootNavigator from './src/navigation/RootNavigator';
 import useAppFonts from './src/hooks/useAppFonts';
 import { loadPersistedToken, fetchProfile } from './src/redux/slices/authSlice';
@@ -81,7 +82,11 @@ const AppContent = () => {
     return <View style={{ flex: 1 }} />;
   }
 
-  return <RootNavigator />;
+  return (
+    <SocketProvider>
+      <RootNavigator />
+    </SocketProvider>
+  );
 };
 
 export default function App() {
