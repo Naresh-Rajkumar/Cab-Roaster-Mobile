@@ -48,7 +48,7 @@ function stopDisplay(status) {
 // ─── Live Map Component ───────────────────────────────────────────────────────
 // mapRef is forwarded to CrossPlatformMap → NativeMap → MapView so that
 // animateMapTo() can call mapRef.current.animateToRegion() as GPS updates arrive.
-const LiveMap = ({ cabLocation, trail, mapStatus, colors, mapRef }) => (
+const LiveMap = ({ cabLocation, trail, mapStatus, colors, mapRef, markers }) => (
   <View style={styles.mapView}>
     <CrossPlatformMap
       ref={mapRef}
@@ -59,7 +59,7 @@ const LiveMap = ({ cabLocation, trail, mapStatus, colors, mapRef }) => (
       }
       driverLocation={cabLocation}
       polyline={trail}
-      markers={[]}
+      markers={markers ?? []}
     />
 
     {/* Map status badge */}
@@ -114,14 +114,13 @@ const LiveTrackingScreen = ({ navigation, route }) => {
   // ─── Socket event handlers ─────────────────────────────────────────────────
 
   const handleActiveCabs = useCallback((cabs) => {
-    // Need at least one identifier to match the cab
-    if (!currentRide?.vehicleNo && !currentRide?.cabId) return;
+    if (!currentRide?.id && !currentRide?.cabId) return;
     const list = Array.isArray(cabs) ? cabs : [];
 
-    // Find our cab by vehicleNo (cabReg) or cabId
+    // Match by tripId first (most reliable), fall back to cabId
     const match = list.find(
-      (c) => c.cabReg === currentRide.vehicleNo ||
-             String(c.cabId) === String(currentRide.cabId)
+      (c) => (c.tripId && String(c.tripId) === String(currentRide.id)) ||
+             (c.cabId && String(c.cabId) === String(currentRide.cabId))
     );
 
     if (match?.location?.latitude) {
@@ -136,14 +135,14 @@ const LiveTrackingScreen = ({ navigation, route }) => {
         watchCab(match.cabId);
       }
     }
-  }, [currentRide?.vehicleNo, currentRide?.cabId, watchCab]);
+  }, [currentRide?.id, currentRide?.cabId, watchCab]);
 
   const handleCabLocationUpdate = useCallback((data) => {
-    if (!currentRide?.vehicleNo && !currentRide?.cabId) return;
+    if (!currentRide?.id && !currentRide?.cabId) return;
 
     const isOurCab =
-      String(data.cabId) === String(currentRide?.cabId) ||
-      data.cabReg === currentRide?.vehicleNo;
+      (data.tripId && String(data.tripId) === String(currentRide?.id)) ||
+      (data.cabId && String(data.cabId) === String(currentRide?.cabId));
 
     if (!isOurCab) return;
 
@@ -161,14 +160,14 @@ const LiveTrackingScreen = ({ navigation, route }) => {
       watchedCabIdRef.current = data.cabId;
       watchCab(data.cabId);
     }
-  }, [currentRide?.cabId, currentRide?.vehicleNo, watchCab]);
+  }, [currentRide?.id, currentRide?.cabId, watchCab]);
 
   const handleCabDetail = useCallback((data) => {
     if (!data.location?.latitude) return;
 
     const isOurCab =
-      String(data.cabId) === String(currentRide?.cabId) ||
-      data.cabReg === currentRide?.vehicleNo;
+      (data.tripId && String(data.tripId) === String(currentRide?.id)) ||
+      (data.cabId && String(data.cabId) === String(currentRide?.cabId));
 
     if (!isOurCab) return;
 
@@ -184,7 +183,7 @@ const LiveTrackingScreen = ({ navigation, route }) => {
           .map((p) => ({ latitude: p.latitude, longitude: p.longitude }))
       );
     }
-  }, [currentRide?.cabId, currentRide?.vehicleNo]);
+  }, [currentRide?.id, currentRide?.cabId]);
 
   const handleCabOffline = useCallback((data) => {
     if (String(data.cabId) === String(watchedCabIdRef.current)) {
@@ -294,6 +293,17 @@ const LiveTrackingScreen = ({ navigation, route }) => {
 
   const currentStopIndex = routeStops.findIndex((s) => s.status !== 'completed');
 
+  const stopMarkers = tripStops
+    .filter((s) => s.latitude && s.longitude)
+    .map((stop, idx) => ({
+      id: stop.id,
+      latitude: stop.latitude,
+      longitude: stop.longitude,
+      title: stop.name,
+      label: String(idx + 1),
+      color: stop.status === 'completed' ? '#16a34a' : stop.status === 'next_stop' ? '#643ee8' : '#9e9aa8',
+    }));
+
   return (
     <View style={styles.container}>
       {/* Header overlay on map */}
@@ -315,6 +325,7 @@ const LiveTrackingScreen = ({ navigation, route }) => {
         mapStatus={mapStatus}
         colors={colors}
         mapRef={mapRef}
+        markers={stopMarkers}
       />
 
       {/* Bottom Panel */}

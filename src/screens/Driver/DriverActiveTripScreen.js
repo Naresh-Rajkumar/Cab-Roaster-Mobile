@@ -305,6 +305,7 @@ const DriverActiveTripScreen = ({ navigation, route }) => {
             label: String(idx + 1),
             color: stop.status === 'completed' ? '#16a34a' : stop.status === 'next_stop' ? '#643ee8' : '#9e9aa8',
           }))}
+          polyline={stops.filter(s => s.latitude && s.longitude).map(s => ({ latitude: s.latitude, longitude: s.longitude }))}
         />
 
         {/* SOS overlay on map */}
