@@ -13,7 +13,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import * as Location from 'expo-location';
 
 /** Radius in metres within which a stop is considered "arrived at" */
-const ARRIVAL_RADIUS_METERS = 50;
+const ARRIVAL_RADIUS_METERS = 300;
 
 /**
  * Haversine great-circle distance between two lat/lng points, in metres.
@@ -108,7 +108,7 @@ export function useDriverLocation(emitLocation, tripMeta = {}, stops = [], onSto
           const currentStops = stopsRef.current;
           const handleArrival = onStopArrivalRef.current;
 
-          if (handleArrival && currentStops.length > 0) {
+          if (handleArrival && currentStops.length >= 0) {
             for (const stop of currentStops) {
               if (!stop.latitude || !stop.longitude) continue;
 
