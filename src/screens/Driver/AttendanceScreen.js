@@ -148,7 +148,8 @@ const AttendanceScreen = ({ navigation, route }) => {
   const [employees, setEmployees] = useState(
     (stopData.employees ?? []).map((e) => ({
       ...e,
-      boarded: e.boarded ?? e.status === 'picked_up',
+      // Accept both 'picked_up' (local state) and 'boarded' (API re-fetch value)
+      boarded: e.boarded ?? (e.status === 'picked_up' || e.status === 'boarded'),
     }))
   );
   const [confirming, setConfirming] = useState(false);
@@ -172,14 +173,14 @@ const AttendanceScreen = ({ navigation, route }) => {
       // 1. Record stop arrival on backend
       await tripService.arriveAtStop(tripId, stopId);
 
-      // 2. Save boarding status per employee
+      // 2. Save boarding status per employee.
+      // employeeId MUST be a number — backend DTO uses @IsNumber().
+      // e.id comes from normalizeEmployee() which stringifies, so we convert back.
       const statuses = employees.map((e) => ({
-        employeeId: e.id,
+        employeeId: Number(e.id),
         status: e.boarded ? 'picked_up' : 'no_show',
       }));
-      await tripService.updateEmployeeBoarding(tripId, stopId, statuses).catch(() => {
-        console.warn('[Attendance] updateEmployeeBoarding not yet on BE — skipped');
-      });
+      await tripService.updateEmployeeBoarding(tripId, stopId, statuses);
 
       // 3. Emit socket so employees get real-time notification
       emitStopArrival({ tripId, stopId, cabId: null, driverId: null });

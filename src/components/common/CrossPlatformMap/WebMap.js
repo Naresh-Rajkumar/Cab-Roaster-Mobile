@@ -1,12 +1,14 @@
 /**
  * WebMap — Leaflet-based map for web browser testing.
  * react-native-maps only works on native, so this provides a web fallback.
+ *
+ * Props:
+ *   onMapPress({ latitude, longitude }) — called when user taps the map
+ *   currentLocation { latitude, longitude } — blue "you are here" dot
  */
 import React, { useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import 'leaflet/dist/leaflet.css';
 
-// Leaflet CSS injection (runs once)
 let leafletCssInjected = false;
 function injectLeafletCss() {
   if (leafletCssInjected || typeof document === 'undefined') return;
@@ -20,12 +22,12 @@ function injectLeafletCss() {
 const DEFAULT_CENTER = [12.9716, 80.2209];
 const DEFAULT_ZOOM = 14;
 
-const WebMap = ({ region, markers = [], driverLocation, polyline = [], style }) => {
+const WebMap = ({ region, markers = [], driverLocation, currentLocation, polyline = [], roadRoute = [], dropRoadRoute = [], style, onMapPress }) => {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const layersRef = useRef([]);
+  const currentLocLayerRef = useRef(null);
 
-  // Memoize center from region
   const center = useMemo(() => {
     if (driverLocation) return [driverLocation.latitude, driverLocation.longitude];
     if (region) return [region.latitude, region.longitude];
@@ -36,10 +38,8 @@ const WebMap = ({ region, markers = [], driverLocation, polyline = [], style }) 
   useEffect(() => {
     injectLeafletCss();
     const L = require('leaflet');
-
     if (!mapRef.current || mapInstanceRef.current) return;
 
-    // Fix Leaflet default icon
     delete L.Icon.Default.prototype._getIconUrl;
     L.Icon.Default.mergeOptions({
       iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -52,6 +52,13 @@ const WebMap = ({ region, markers = [], driverLocation, polyline = [], style }) 
       attribution: '© OpenStreetMap',
     }).addTo(map);
 
+    // Map tap → onMapPress callback
+    map.on('click', (e) => {
+      if (onMapPress) {
+        onMapPress({ latitude: e.latlng.lat, longitude: e.latlng.lng });
+      }
+    });
+
     mapInstanceRef.current = map;
     setTimeout(() => map.invalidateSize(), 200);
 
@@ -61,17 +68,40 @@ const WebMap = ({ region, markers = [], driverLocation, polyline = [], style }) 
     };
   }, []);
 
+  // Update current location dot
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const L = require('leaflet');
+
+    if (currentLocLayerRef.current) {
+      currentLocLayerRef.current.remove();
+      currentLocLayerRef.current = null;
+    }
+
+    if (currentLocation?.latitude && currentLocation?.longitude) {
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:16px;height:16px;border-radius:50%;background:#2563EB;border:3px solid white;box-shadow:0 0 0 6px rgba(37,99,235,0.2)"></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+      currentLocLayerRef.current = L.marker(
+        [currentLocation.latitude, currentLocation.longitude],
+        { icon }
+      ).addTo(map);
+    }
+  }, [currentLocation?.latitude, currentLocation?.longitude]);
+
   // Update markers, driver, polyline
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
     const L = require('leaflet');
 
-    // Clear previous layers
     layersRef.current.forEach((l) => l.remove());
     layersRef.current = [];
 
-    // Driver marker
     if (driverLocation) {
       const icon = L.divIcon({
         className: '',
@@ -85,31 +115,46 @@ const WebMap = ({ region, markers = [], driverLocation, polyline = [], style }) 
       map.panTo([driverLocation.latitude, driverLocation.longitude], { animate: true });
     }
 
-    // Stop markers
     markers.forEach((mk) => {
       if (!mk.latitude || !mk.longitude) return;
       const color = mk.color || '#9e9aa8';
       const icon = L.divIcon({
         className: '',
-        html: `<div style="width:22px;height:22px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;border:2px solid white;color:white;font-size:10px;font-weight:700">${mk.label || '●'}</div>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11],
+        html: `<div style="width:26px;height:26px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;border:2.5px solid white;color:white;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.25)">${mk.label || '●'}</div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
       });
       const m = L.marker([mk.latitude, mk.longitude], { icon }).addTo(map);
       if (mk.title) m.bindPopup(mk.title);
       layersRef.current.push(m);
     });
 
-    // Polyline
     if (polyline.length > 1) {
       const line = L.polyline(
         polyline.map((p) => [p.latitude, p.longitude]),
-        { color: '#643ee8', weight: 4, opacity: 0.8 }
+        { color: '#643ee8', weight: 3, opacity: 0.5, dashArray: '4 4' }
       ).addTo(map);
       layersRef.current.push(line);
     }
 
-    // Fit bounds
+    // Pickup road route — purple solid
+    if (roadRoute.length > 1) {
+      const line = L.polyline(
+        roadRoute.map((p) => [p.latitude, p.longitude]),
+        { color: '#643ee8', weight: 4, opacity: 0.85 }
+      ).addTo(map);
+      layersRef.current.push(line);
+    }
+
+    // Drop road route — red solid
+    if (dropRoadRoute.length > 1) {
+      const line = L.polyline(
+        dropRoadRoute.map((p) => [p.latitude, p.longitude]),
+        { color: '#E84E3E', weight: 4, opacity: 0.85 }
+      ).addTo(map);
+      layersRef.current.push(line);
+    }
+
     const allPoints = [
       ...(driverLocation ? [[driverLocation.latitude, driverLocation.longitude]] : []),
       ...markers.filter((m) => m.latitude && m.longitude).map((m) => [m.latitude, m.longitude]),
@@ -119,7 +164,14 @@ const WebMap = ({ region, markers = [], driverLocation, polyline = [], style }) 
     } else if (allPoints.length === 1) {
       map.setView(allPoints[0], DEFAULT_ZOOM);
     }
-  }, [markers, driverLocation, polyline]);
+  }, [markers, driverLocation, polyline, roadRoute, dropRoadRoute]);
+
+  // Pan when region prop changes
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !region) return;
+    map.setView([region.latitude, region.longitude], DEFAULT_ZOOM, { animate: true });
+  }, [region?.latitude, region?.longitude]);
 
   return (
     <View style={[styles.container, style]}>

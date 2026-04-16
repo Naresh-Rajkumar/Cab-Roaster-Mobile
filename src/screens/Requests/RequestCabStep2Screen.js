@@ -46,6 +46,7 @@ const RequestCabStep2Screen = ({ navigation, route }) => {
   const [selectedShift, setSelectedShift] = useState(null);
   const [showShiftDropdown, setShowShiftDropdown] = useState(false);
   const [selectedDays, setSelectedDays] = useState(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
+  const [gender, setGender] = useState('');
 
   // Greeting
   const hour = new Date().getHours();
@@ -91,9 +92,22 @@ const RequestCabStep2Screen = ({ navigation, route }) => {
         workingDays: selectedDays,
       };
 
+      // Include home coordinates if available
+      if (step1Data.homeCoords?.latitude != null) {
+        profilePayload.homeLatitude = step1Data.homeCoords.latitude;
+      }
+      if (step1Data.homeCoords?.longitude != null) {
+        profilePayload.homeLongitude = step1Data.homeCoords.longitude;
+      }
+
       // If shift is selected, include shiftId
       if (selectedShift?.id) {
         profilePayload.shiftId = selectedShift.id;
+      }
+
+      // Gender (if selected)
+      if (gender) {
+        profilePayload.gender = gender;
       }
 
       await profileService.updateProfile(profilePayload);
@@ -106,6 +120,14 @@ const RequestCabStep2Screen = ({ navigation, route }) => {
         workingDays: selectedDays,
         reason: 'New cab request from onboarding',
       };
+
+      // Include home coordinates if available
+      if (step1Data.homeCoords?.latitude != null) {
+        requestPayload.homeLatitude = step1Data.homeCoords.latitude;
+      }
+      if (step1Data.homeCoords?.longitude != null) {
+        requestPayload.homeLongitude = step1Data.homeCoords.longitude;
+      }
       // Only include employeeId if available — backend resolves from JWT otherwise
       if (user?.employeeId) {
         requestPayload.employeeId = user.employeeId;
@@ -227,6 +249,57 @@ const RequestCabStep2Screen = ({ navigation, route }) => {
               ))}
             </View>
           )}
+        </View>
+
+        {/* Gender Section */}
+        <View style={styles.sectionContainer}>
+          <Text style={[styles.sectionLabel, { color: colors.text }]}>
+            Gender
+          </Text>
+          <View style={styles.genderRow}>
+            {[
+              { value: 'male', label: 'Male' },
+              { value: 'female', label: 'Female' },
+              { value: 'other', label: 'Other' },
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[
+                  styles.genderOption,
+                  {
+                    borderColor: gender === opt.value ? colors.primary : colors.border || '#E5E7EB',
+                    backgroundColor: gender === opt.value ? '#EDE7FB' : colors.surface,
+                  },
+                ]}
+                onPress={() => setGender(opt.value)}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.radioOuter,
+                    {
+                      borderColor: gender === opt.value ? colors.primary : colors.border || '#D1D5DB',
+                    },
+                  ]}
+                >
+                  {gender === opt.value && (
+                    <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />
+                  )}
+                </View>
+                <Text
+                  style={[
+                    styles.radioLabel,
+                    {
+                      color: gender === opt.value ? colors.primary : colors.text,
+                      fontWeight: gender === opt.value ? '600' : '400',
+                    },
+                  ]}
+                >
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Working Days Section */}
@@ -373,6 +446,20 @@ const styles = StyleSheet.create({
   dropdownList: { borderWidth: 1, borderRadius: 8, marginTop: 4, overflow: 'hidden' },
   dropdownItem: { paddingVertical: 12, paddingHorizontal: spacing.base, borderBottomWidth: 0.5, borderBottomColor: '#F3F4F6' },
   dropdownItemText: { fontSize: 14 },
+  genderRow: { flexDirection: 'row', gap: spacing.sm },
+  genderOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1.5,
+    borderRadius: 8,
+  },
+  radioOuter: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  radioInner: { width: 9, height: 9, borderRadius: 5 },
+  radioLabel: { fontSize: 14 },
   workingDaysHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   selectAllRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   selectAllText: { fontSize: 13 },

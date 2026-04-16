@@ -17,7 +17,9 @@ const realDriverService = {
   arriveAtStop: (tripId, stopId) => axiosInstance.post(`/trips/${tripId}/stops/${stopId}/arrive`),
   updateStopHandoff: (tripId, stopId) => axiosInstance.post(`/trips/${tripId}/stops/${stopId}/arrive`),
   getTripHistory: () => axiosInstance.get('/trips/my-trips', { params: { status: 'Completed' } }),
-  saveTripData: () => Promise.resolve({ data: { success: true } }),
+  // Trip data (attendance) is already saved at the stop level via updateEmployeeBoarding.
+  // saveTripData is a local-only cleanup — navigates driver home after review.
+  saveTripData: (_tripId) => Promise.resolve({ data: { success: true } }),
 };
 
 export const driverService = USE_MOCK ? mockDriverService : realDriverService;

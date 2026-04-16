@@ -13,7 +13,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import * as Location from 'expo-location';
 
 /** Radius in metres within which a stop is considered "arrived at" */
-const ARRIVAL_RADIUS_METERS = 150;
+const ARRIVAL_RADIUS_METERS = 50;
 
 /**
  * Haversine great-circle distance between two lat/lng points, in metres.
@@ -55,6 +55,10 @@ export function useDriverLocation(emitLocation, tripMeta = {}, stops = [], onSto
   // driver lingers near the stop (resets when tracking restarts)
   const arrivedStopIdsRef = useRef(new Set());
 
+  // Socket emit is throttled to 5 s so the server isn't flooded, while the
+  // local GPS watch fires every 1 s for instant map updates on the driver's screen.
+  const lastEmitRef = useRef(0);
+
   const startTracking = useCallback(async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -66,12 +70,13 @@ export function useDriverLocation(emitLocation, tripMeta = {}, stops = [], onSto
       setIsTracking(true);
       setError(null);
       arrivedStopIdsRef.current = new Set(); // reset on each trip start
+      lastEmitRef.current = 0;
 
       watchRef.current = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
-          timeInterval: 5000,   // emit every 5 s
-          distanceInterval: 10, // or every 10 m
+          timeInterval: 1000,   // fire every 1 s — no movement required
+          distanceInterval: 0,  // 0 = fire on time interval alone, not distance
         },
         (loc) => {
           const pos = {
@@ -82,17 +87,21 @@ export function useDriverLocation(emitLocation, tripMeta = {}, stops = [], onSto
             accuracy: loc.coords.accuracy ?? 0,
           };
 
+          // Always update local state immediately (instant map movement)
           setLocation(pos);
 
-          // ─── Emit GPS to socket ─────────────────────────────────────────────
-          const { cabId, driverId, tripId } = tripMetaRef.current;
-
-          if (!cabId) {
-            console.warn('[useDriverLocation] cabId missing — location not emitted');
-          } else if (!driverId) {
-            console.warn('[useDriverLocation] driverId missing — location not emitted');
-          } else if (emitLocation) {
-            emitLocation({ cabId, driverId, tripId: tripId ?? null, ...pos });
+          // ─── Emit GPS to socket — throttled to 5 s ─────────────────────────
+          const now = Date.now();
+          if (now - lastEmitRef.current >= 5000) {
+            lastEmitRef.current = now;
+            const { cabId, driverId, tripId } = tripMetaRef.current;
+            if (!cabId) {
+              console.warn('[useDriverLocation] cabId missing — location not emitted');
+            } else if (!driverId) {
+              console.warn('[useDriverLocation] driverId missing — location not emitted');
+            } else if (emitLocation) {
+              emitLocation({ cabId, driverId, tripId: tripId ?? null, ...pos });
+            }
           }
 
           // ─── Proximity check against each stop ─────────────────────────────
@@ -102,7 +111,13 @@ export function useDriverLocation(emitLocation, tripMeta = {}, stops = [], onSto
           if (handleArrival && currentStops.length > 0) {
             for (const stop of currentStops) {
               if (!stop.latitude || !stop.longitude) continue;
-              if (arrivedStopIdsRef.current.has(String(stop.id))) continue; // already fired
+
+              // Build a stable dedup key — fall back to stop name if id is empty
+              const stopKey = stop.id
+                ? String(stop.id)
+                : `name:${stop.name ?? ''}`;
+
+              if (arrivedStopIdsRef.current.has(stopKey)) continue;
 
               const dist = haversineDistance(
                 pos.latitude,
@@ -111,11 +126,20 @@ export function useDriverLocation(emitLocation, tripMeta = {}, stops = [], onSto
                 stop.longitude,
               );
 
-              if (dist <= ARRIVAL_RADIUS_METERS) {
-                console.log(`[useDriverLocation] Arrived at stop "${stop.name}" (${Math.round(dist)}m)`);
-                arrivedStopIdsRef.current.add(String(stop.id));
+              // Trigger when within 300 m  OR  when speed-based ETA ≤ 30 s
+              // (catches fast approach before hitting the radius)
+              const speedMps = pos.speed > 0 ? pos.speed : 0;
+              const etaSecs  = speedMps > 0 ? dist / speedMps : Infinity;
+              const shouldTrigger = dist <= ARRIVAL_RADIUS_METERS || etaSecs <= 30;
+
+              if (shouldTrigger) {
+                console.log(
+                  `[useDriverLocation] Triggering attendance at "${stop.name}" — ` +
+                  `dist=${Math.round(dist)}m, eta=${Math.round(etaSecs)}s`
+                );
+                arrivedStopIdsRef.current.add(stopKey);
                 handleArrival(stop);
-                break; // only trigger one stop per GPS update
+                break; // only one stop per GPS update
               }
             }
           }

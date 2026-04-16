@@ -101,7 +101,27 @@ const DriverTripsScreen = ({ navigation }) => {
   const data = activeTab === 0 ? upcomingTrips : tripHistory;
 
   const handleTripPress = (trip) => {
-    navigation.navigate(SCREENS.DRIVER_ACTIVE_TRIP, { trip });
+    const status = (trip.status ?? '').toLowerCase();
+    const isCompleted = status === 'completed' || status === 'cancelled';
+
+    if (isCompleted) {
+      // Map the trip list shape → the summary shape TripSummaryScreen expects
+      navigation.navigate(SCREENS.TRIP_SUMMARY, {
+        summary: {
+          tripNumber:   trip.tripNumber ?? trip.id,
+          vehicle:      trip.vehicle ?? '',
+          vehicleType:  trip.vehicleType ?? '',
+          startedAt:    trip.pickup?.time ?? '',
+          endedAt:      trip.destination?.eta ?? '',
+          totalPickups: trip.employeeCount ?? trip.pickup?.employeeCount ?? 0,
+          totalStops:   0,
+          totalDistance: trip.distance ?? '',
+          routeStops:   [],
+        },
+      });
+    } else {
+      navigation.navigate(SCREENS.DRIVER_ACTIVE_TRIP, { trip });
+    }
   };
 
   return (

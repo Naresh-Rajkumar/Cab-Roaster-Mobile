@@ -14,6 +14,21 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { StatusBadge, Avatar } from '../../components';
 import { saveTripData } from '../../redux/slices/driverSlice';
 
+function formatTime(isoOrStr) {
+  if (!isoOrStr) return '';
+  const s = String(isoOrStr);
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return s;  // already formatted
+  try {
+    return new Date(s).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return s;
+  }
+}
+
+function isPickedUp(status) {
+  return status === 'picked_up' || status === 'boarded';
+}
+
 const MetaStat = ({ label, value, colors }) => (
   <View style={styles.metaStat}>
     <Text style={[styles.metaValue, { color: colors.text }]}>{value}</Text>
@@ -44,12 +59,12 @@ const SummaryStopItem = ({ stop, isLast, colors }) => (
               <Avatar name={emp.name} size={28} />
               <Text style={[styles.empName, { color: colors.text }]}>{emp.name}</Text>
               <View style={[styles.empStatus, {
-                backgroundColor: emp.status === 'picked_up' ? '#e8f6ed' : '#fce8e8',
+                backgroundColor: isPickedUp(emp.status) ? '#e8f6ed' : '#fce8e8',
               }]}>
                 <Text style={[styles.empStatusText, {
-                  color: emp.status === 'picked_up' ? '#16a34a' : '#dc2626',
+                  color: isPickedUp(emp.status) ? '#16a34a' : '#dc2626',
                 }]}>
-                  {emp.status === 'picked_up' ? 'Picked Up' : 'No Show'}
+                  {isPickedUp(emp.status) ? 'Picked Up' : 'No Show'}
                 </Text>
               </View>
             </View>
@@ -73,23 +88,30 @@ const TripSummaryScreen = ({ navigation, route }) => {
 
   // Build summary from Redux state or route params fallback
   const summaryBase = route?.params?.summary ?? tripSummary ?? {};
+  const resolvedStops = summaryBase.routeStops ?? routeStops;
   const summary = {
-    tripNumber: summaryBase.tripNumber ?? summaryBase.tripId ?? 'Trip',
-    vehicle: summaryBase.vehicle ?? summaryBase.cabNumber ?? '',
-    vehicleType: summaryBase.vehicleType ?? '',
-    startedAt: summaryBase.startedAt ?? '',
-    endedAt: summaryBase.endedAt ?? summaryBase.completedAt ?? '',
-    totalPickups: summaryBase.totalPickups ?? routeStops.reduce((n, s) => n + (s.employees?.filter((e) => e.status === 'picked_up').length ?? 0), 0),
-    totalStops: summaryBase.totalStops ?? routeStops.length,
+    tripNumber:   summaryBase.tripNumber ?? summaryBase.tripId ?? 'Trip',
+    vehicle:      summaryBase.vehicle ?? summaryBase.cabNumber ?? '',
+    vehicleType:  summaryBase.vehicleType ?? '',
+    startedAt:    formatTime(summaryBase.startedAt ?? ''),
+    endedAt:      formatTime(summaryBase.endedAt ?? summaryBase.completedAt ?? ''),
+    totalPickups: summaryBase.totalPickups ??
+      resolvedStops.reduce((n, s) =>
+        n + (s.employees?.filter((e) => isPickedUp(e.status)).length ?? 0), 0),
+    totalStops:   summaryBase.totalStops ?? resolvedStops.filter((s) => !s.isDestination).length,
     totalDistance: summaryBase.totalDistance ?? summaryBase.distance ?? '',
-    routeStops: summaryBase.routeStops ?? routeStops,
+    routeStops:   resolvedStops,
   };
 
   const handleSaveTripData = () => {
+    // Attendance data is already saved per-stop (updateEmployeeBoarding).
+    // This action just clears Redux state and returns the driver to the home screen.
     dispatch(saveTripData()).finally(() => {
-      Alert.alert('Trip Saved', 'Trip data has been saved successfully!', [
-        { text: 'OK', onPress: () => navigation.popToTop() },
-      ]);
+      Alert.alert(
+        'Trip Saved',
+        'Trip data has been recorded successfully.',
+        [{ text: 'OK', onPress: () => navigation.popToTop() }],
+      );
     });
   };
 
