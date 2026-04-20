@@ -131,7 +131,7 @@ export function useDriverLocation(emitLocation, tripMeta = {}, stops = [], onSto
               const speedMps = pos.speed > 0 ? pos.speed : 0;
               const etaSecs  = speedMps > 0 ? dist / speedMps : Infinity;
               const shouldTrigger = dist <= ARRIVAL_RADIUS_METERS || etaSecs <= 30;
-
+              console.log(dist,ARRIVAL_RADIUS_METERS,etaSecs)
               if (shouldTrigger) {
                 console.log(
                   `[useDriverLocation] Triggering attendance at "${stop.name}" — ` +

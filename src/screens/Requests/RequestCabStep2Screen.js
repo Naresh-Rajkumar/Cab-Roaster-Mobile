@@ -21,6 +21,18 @@ import typography from '../../theme/typography.json';
 
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
+// Convert "HH:MM:SS" or "HH:MM" (24-hour) to "h:MM AM/PM"
+const formatTime12h = (timeStr) => {
+  if (!timeStr) return '';
+  const [hourStr, minuteStr] = timeStr.split(':');
+  const hour = parseInt(hourStr, 10);
+  const minute = minuteStr || '00';
+  if (isNaN(hour)) return timeStr;
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${minute} ${period}`;
+};
+
 const unwrap = (res) => {
   const body = res?.data;
   if (body?.data) return body.data;
@@ -59,11 +71,28 @@ const RequestCabStep2Screen = ({ navigation, route }) => {
   useEffect(() => {
     const loadShifts = async () => {
       try {
-        const res = await configService.getShifts();
+        const res = await configService.getShifts('employee');
         const data = unwrap(res);
         const arr = Array.isArray(data) ? data : [];
-        setShifts(arr);
-        if (arr.length > 0) setSelectedShift(arr[0]);
+        // Sort by shift order: Morning → Afternoon → Night, then by start time
+        const SHIFT_ORDER = { morning: 0, afternoon: 1, night: 2 };
+        const sorted = [...arr].sort((a, b) => {
+          const nameA = (a.name || '').toLowerCase();
+          const nameB = (b.name || '').toLowerCase();
+          const orderA = Object.keys(SHIFT_ORDER).find(k => nameA.includes(k));
+          const orderB = Object.keys(SHIFT_ORDER).find(k => nameB.includes(k));
+          if (orderA !== undefined && orderB !== undefined) {
+            return SHIFT_ORDER[orderA] - SHIFT_ORDER[orderB];
+          }
+          if (orderA !== undefined) return -1;
+          if (orderB !== undefined) return 1;
+          // Fallback: sort by start time
+          const timeA = a.startTime || a.start_time || '';
+          const timeB = b.startTime || b.start_time || '';
+          return timeA.localeCompare(timeB);
+        });
+        setShifts(sorted);
+        if (sorted.length > 0) setSelectedShift(sorted[0]);
       } catch (err) {
         console.warn('Failed to load shifts:', err.message);
       } finally {
@@ -159,7 +188,7 @@ const RequestCabStep2Screen = ({ navigation, route }) => {
   };
 
   const shiftLabel = selectedShift
-    ? `${selectedShift.startTime || selectedShift.start_time || ''} - ${selectedShift.endTime || selectedShift.end_time || ''}`
+    ? `${formatTime12h(selectedShift.startTime || selectedShift.start_time)} - ${formatTime12h(selectedShift.endTime || selectedShift.end_time)}`
     : 'Select shift timing';
 
   // Split days into rows: first row 3, second row 2
@@ -242,7 +271,7 @@ const RequestCabStep2Screen = ({ navigation, route }) => {
                   }}
                 >
                   <Text style={[styles.dropdownItemText, { color: colors.text }]}>
-                    {shift.startTime || shift.start_time || ''} - {shift.endTime || shift.end_time || ''}
+                    {formatTime12h(shift.startTime || shift.start_time)} - {formatTime12h(shift.endTime || shift.end_time)}
                     {shift.name ? ` (${shift.name})` : ''}
                   </Text>
                 </TouchableOpacity>
