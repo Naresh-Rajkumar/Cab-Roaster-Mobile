@@ -140,6 +140,8 @@ const RequestCabStep1Screen = ({ navigation }) => {
   const [dropFilter, setDropFilter] = useState('');
   const [showPickupDropdown, setShowPickupDropdown] = useState(false);
   const [showDropDropdown, setShowDropDropdown] = useState(false);
+  const [stopsLoading, setStopsLoading] = useState(false);
+  const stopsRefreshingRef = useRef(false);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
@@ -364,6 +366,24 @@ const RequestCabStep1Screen = ({ navigation }) => {
 
   // ── Stop dropdowns ─────────────────────────────────────────────────
 
+  // Fetches the latest stops from the API. Called every time a dropdown opens
+  // so admin-added stops appear without requiring a screen reload.
+  // The ref guard prevents duplicate in-flight requests.
+  const refreshStops = useCallback(async () => {
+    if (stopsRefreshingRef.current) return;
+    stopsRefreshingRef.current = true;
+    setStopsLoading(true);
+    try {
+      const stopsRes = await configService.getStops();
+      setStops(normalizeStopsList(unwrap(stopsRes)));
+    } catch (err) {
+      console.warn('Failed to refresh stops:', err.message);
+    } finally {
+      stopsRefreshingRef.current = false;
+      setStopsLoading(false);
+    }
+  }, []);
+
   // Exclude already-selected drop stop from pickup list (and vice versa) when differentDrop
   const filteredPickupStops = useMemo(
     () => stops.filter((s) => {
@@ -387,13 +407,19 @@ const RequestCabStep1Screen = ({ navigation }) => {
     const next = !showPickupDropdown;
     setShowPickupDropdown(next);
     setShowDropDropdown(false);
-    if (next) setPickupFilter('');
+    if (next) {
+      setPickupFilter('');
+      refreshStops();
+    }
   };
   const toggleDropDropdown = () => {
     const next = !showDropDropdown;
     setShowDropDropdown(next);
     setShowPickupDropdown(false);
-    if (next) setDropFilter('');
+    if (next) {
+      setDropFilter('');
+      refreshStops();
+    }
   };
 
   // ── Map markers + distance ─────────────────────────────────────────
@@ -713,6 +739,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
                   filter={pickupFilter}
                   onFilterChange={setPickupFilter}
                   colors={colors}
+                  loading={stopsLoading}
                   onSelect={(stop, label) => {
                     const lat = stop.latitude ? parseFloat(stop.latitude) : null;
                     const lon = stop.longitude ? parseFloat(stop.longitude) : null;
@@ -759,6 +786,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
                   filter={dropFilter}
                   onFilterChange={setDropFilter}
                   colors={colors}
+                  loading={stopsLoading}
                   onSelect={(stop, label) => {
                     const lat = stop.latitude ? parseFloat(stop.latitude) : null;
                     const lon = stop.longitude ? parseFloat(stop.longitude) : null;
@@ -890,7 +918,7 @@ const RequestCabStep1Screen = ({ navigation }) => {
 
 const Req = ({ c }) => <Text style={{ color: c }}>*</Text>;
 
-const StopList = ({ stops, filter, onFilterChange, colors, onSelect }) => (
+const StopList = ({ stops, filter, onFilterChange, colors, onSelect, loading }) => (
   <View style={[styles.dropList, { backgroundColor: '#FFF', borderColor: colors.border || '#E5E7EB' }]}>
     <View style={[styles.dropSearch, { borderBottomColor: colors.border || '#E5E7EB', backgroundColor: '#F9FAFB' }]}>
       <Ionicons name="search-outline" size={16} color={colors.textTertiary} style={{ marginRight: 6 }} />
@@ -902,6 +930,7 @@ const StopList = ({ stops, filter, onFilterChange, colors, onSelect }) => (
         placeholderTextColor={colors.textTertiary}
         autoFocus={Platform.OS !== 'web'}
       />
+      {loading && <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 4 }} />}
     </View>
     <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
       {stops.length === 0
