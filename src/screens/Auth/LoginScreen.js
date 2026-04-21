@@ -135,7 +135,8 @@ const LoginScreen = ({ navigation }) => {
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&scope=${encodeURIComponent('openid profile email')}` +
         `&response_mode=fragment` +
-        `&nonce=${nonce}`;
+        `&nonce=${nonce}` +
+        `&prompt=select_account`;
 
       if (Platform.OS === 'web') {
         // Open popup for web

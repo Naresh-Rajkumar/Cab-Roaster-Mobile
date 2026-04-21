@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
-import { logout } from '../../redux/slices/authSlice';
+import { logoutUser } from '../../redux/slices/authSlice';
 import { Avatar } from '../../components';
 
 const GENERAL_ITEMS = [
@@ -89,7 +89,7 @@ const DriverProfileScreen = ({ navigation }) => {
   const [showLogout, setShowLogout] = useState(false);
 
   const handleLogout = () => {
-    dispatch(logout());
+    dispatch(logoutUser());
   };
 
   return (

@@ -54,8 +54,8 @@ axiosInstance.interceptors.response.use(
     if (error.response?.status === 401) {
       setAuthToken(null);
       if (_store) {
-        const { logout } = require('../redux/slices/authSlice');
-        _store.dispatch(logout());
+        const { logoutUser } = require('../redux/slices/authSlice');
+        _store.dispatch(logoutUser());
       }
     }
     return Promise.reject(error);

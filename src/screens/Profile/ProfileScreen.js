@@ -16,8 +16,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTheme } from '../../theme/ThemeProvider';
-import { logout } from '../../redux/slices/authSlice';
+import { logoutUser } from '../../redux/slices/authSlice';
 import { Avatar } from '../../components';
+import * as WebBrowser from 'expo-web-browser';
+
+const AZURE_TENANT_ID = '3bc90aa9-088f-4447-9eb2-ff13839e19dd';
 import { SCREENS } from '../../constants';
 
 const GENERAL_ITEMS = [
@@ -101,8 +104,15 @@ const ProfileScreen = ({ navigation }) => {
   const displayName = user?.name ?? 'Ragha Malliga';
   const employeeId = user?.employeeId ?? 'VT216';
 
-  const handleLogout = () => {
-    dispatch(logout());
+  const handleLogout = async () => {
+    setLogoutVisible(false);
+    await dispatch(logoutUser());
+    // Clear the Microsoft SSO session from the system browser so the next
+    // login always shows the account picker (not the previous user's session).
+    const logoutUrl =
+      `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/logout` +
+      `?post_logout_redirect_uri=${encodeURIComponent('vcommute://auth')}`;
+    await WebBrowser.openAuthSessionAsync(logoutUrl, 'vcommute://auth');
   };
 
   return (
