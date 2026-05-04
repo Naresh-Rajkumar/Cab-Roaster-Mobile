@@ -54,8 +54,15 @@ axiosInstance.interceptors.response.use(
     if (error.response?.status === 401) {
       setAuthToken(null);
       if (_store) {
-        const { logoutUser } = require('../redux/slices/authSlice');
-        _store.dispatch(logoutUser());
+        const code = error.response?.data?.code;
+        if (code === 'SESSION_EXPIRED') {
+          // Admin reset the driver's passcode → show SessionExpiredScreen
+          const { setSessionExpired } = require('../redux/slices/authSlice');
+          _store.dispatch(setSessionExpired('admin_reset'));
+        } else {
+          const { logoutUser } = require('../redux/slices/authSlice');
+          _store.dispatch(logoutUser());
+        }
       }
     }
     return Promise.reject(error);

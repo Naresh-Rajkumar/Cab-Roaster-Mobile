@@ -18,6 +18,9 @@ const realAuthService = {
   getProfile: () => axiosInstance.get('/auth/me'),
   sendOtp: (phone) => axiosInstance.post('/auth/send-otp', { phone }),
   verifyOtpCode: (phone, otp) => axiosInstance.post('/auth/verify-otp', { phone, otp }),
+  // Driver passcode login — replaces OTP flow
+  driverCheck: (phone) => axiosInstance.post('/auth/driver-check', { phone }),
+  driverLogin: (phone, passcode) => axiosInstance.post('/auth/driver-login', { phone, passcode }),
 };
 
 // Single export — screens/thunks never need to know which is active

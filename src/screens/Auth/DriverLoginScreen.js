@@ -1,8 +1,11 @@
 /**
  * DriverLoginScreen — Figma: Onboarding-Driver / Login (553:12197)
  *
- * Phone entry → Send OTP → navigates to OTPVerificationScreen.
- * Sets pendingRole = 'driver' so verifyOTP thunk knows the role.
+ * Screen 1 of 2 in the driver passcode login flow.
+ * Driver enters their registered mobile number → POST /auth/driver-check
+ * If valid and passcode is active → navigate to DriverPasscodeScreen.
+ *
+ * Replaces the previous OTP/SMS flow.
  */
 
 import React, { useState } from 'react';
@@ -15,45 +18,74 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useDispatch, useSelector } from 'react-redux';
-import { setPendingRole, sendOtp } from '../../redux/slices/authSlice';
+import { authService } from '../../services/api/authService';
 import { SCREENS } from '../../constants';
 
 // ─── Design tokens (exact from Figma) ─────────────────────────────────────────
-const PRIMARY   = '#643ee8';   // rgb(100,62,232)
-const BG        = '#F5F4F9';   // rgb(245,244,249)
-const TEXT      = '#312E3A';   // rgb(49,46,58)
-const TEXT_SEC  = '#5E5C66';   // rgb(94,92,102)
+const PRIMARY   = '#643ee8';
+const BG        = '#F5F4F9';
+const TEXT      = '#312E3A';
+const TEXT_SEC  = '#5E5C66';
 const WHITE     = '#ffffff';
 const BORDER    = '#E8E6F0';
-const BRAND_RED = '#EE001D';   // rgb(238,0,29)
-const BRAND_GRY = '#4A4A4A';   // rgb(74,74,74)
+const ERROR     = '#dc2626';
+const BRAND_RED = '#EE001D';
+const BRAND_GRY = '#4A4A4A';
+
+// Maps backend error codes to user-friendly messages
+const ERROR_MESSAGES = {
+  PHONE_NOT_FOUND:    'No driver account found with this number.',
+  ACCOUNT_INACTIVE:   'Your account is inactive. Contact your admin.',
+  PASSCODE_NOT_SET:   'No passcode has been set for your account. Contact your admin.',
+  PASSCODE_EXPIRED:   'Your passcode has expired. Contact your admin to renew it.',
+  NETWORK_ERROR:      'No internet connection. Please try again.',
+};
 
 const DriverLoginScreen = ({ navigation }) => {
-  const dispatch = useDispatch();
-  const { isLoading } = useSelector((state) => state.auth);
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone]         = useState('');
+  const [isChecking, setChecking] = useState(false);
+  const [errorMsg, setErrorMsg]   = useState('');
 
-  const isValid = phone.replace(/\D/g, '').length === 10;
+  const digits = phone.replace(/\D/g, '');
+  const isValid = digits.length === 10;
 
-  const [isSending, setIsSending] = useState(false);
+  const handleContinue = async () => {
+    if (!isValid || isChecking) return;
+    setErrorMsg('');
+    setChecking(true);
 
-  const handleSendOTP = async () => {
-    if (!isValid || isSending) return;
-    setIsSending(true);
-    const fullPhone = `+91-${phone.replace(/\D/g, '')}`;
-    dispatch(setPendingRole('driver'));
-    const result = await dispatch(sendOtp(fullPhone));
-    setIsSending(false);
-    if (sendOtp.rejected.match(result)) {
-      Alert.alert('Error', result.payload || 'Failed to send OTP');
-      return;
+    try {
+      const fullPhone = `${digits}`;
+      const res = await authService.driverCheck(fullPhone);
+      const data = res.data?.data || res.data;
+      // Navigate to passcode screen, pass driver info as params
+      navigation.navigate(SCREENS.DRIVER_PASSCODE, {
+        phone:      fullPhone,
+        driverName: data?.driverName || '',
+        orgName:    data?.orgName    || '',
+      });
+    } catch (error) {
+      const status = error?.response?.status;
+      const code   = error?.response?.data?.code;
+
+      if (!error?.response) {
+        setErrorMsg(ERROR_MESSAGES.NETWORK_ERROR);
+      } else if (status === 404) {
+        setErrorMsg(ERROR_MESSAGES.PHONE_NOT_FOUND);
+      } else if (code === 'ACCOUNT_INACTIVE') {
+        setErrorMsg(ERROR_MESSAGES.ACCOUNT_INACTIVE);
+      } else if (code === 'PASSCODE_NOT_SET') {
+        setErrorMsg(ERROR_MESSAGES.PASSCODE_NOT_SET);
+      } else if (code === 'PASSCODE_EXPIRED') {
+        setErrorMsg(ERROR_MESSAGES.PASSCODE_EXPIRED);
+      } else {
+        setErrorMsg(error?.response?.data?.message || 'Something went wrong. Please try again.');
+      }
+    } finally {
+      setChecking(false);
     }
-    const retryAfter = result.payload?.retryAfter ?? 60;
-    navigation.navigate(SCREENS.OTP_VERIFICATION, { phone: fullPhone, retryAfter });
   };
 
   return (
@@ -87,38 +119,43 @@ const DriverLoginScreen = ({ navigation }) => {
           {/* Title */}
           <Text style={styles.title}>Welcome to vCommute</Text>
           <Text style={styles.subtitle}>
-            Log in to start your shift and access today's trips.
+            Enter your registered mobile number to continue.
           </Text>
 
           {/* Phone input */}
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, errorMsg ? styles.inputError : null]}>
             <View style={styles.prefixBox}>
               <Text style={styles.prefixText}>+91</Text>
             </View>
             <TextInput
               style={styles.input}
-              placeholder="Enter Phone number"
+              placeholder="Enter phone number"
               placeholderTextColor={TEXT_SEC}
               keyboardType="number-pad"
               maxLength={10}
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={(v) => { setPhone(v); setErrorMsg(''); }}
               returnKeyType="done"
-              onSubmitEditing={handleSendOTP}
+              onSubmitEditing={handleContinue}
             />
           </View>
 
-          {/* Send OTP button */}
+          {/* Inline error */}
+          {errorMsg ? (
+            <Text style={styles.errorText}>{errorMsg}</Text>
+          ) : null}
+
+          {/* Continue button */}
           <TouchableOpacity
             style={[styles.btn, !isValid && styles.btnDisabled]}
-            onPress={handleSendOTP}
+            onPress={handleContinue}
             activeOpacity={0.85}
-            disabled={!isValid || isLoading || isSending}
+            disabled={!isValid || isChecking}
           >
-            {isLoading ? (
+            {isChecking ? (
               <ActivityIndicator color={WHITE} />
             ) : (
-              <Text style={styles.btnText}>Send OTP</Text>
+              <Text style={styles.btnText}>Continue</Text>
             )}
           </TouchableOpacity>
 
@@ -205,7 +242,7 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
 
-  // Phone input — Figma: h=40, radius=4, white bg
+  // Phone input
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -215,8 +252,11 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1,
     borderColor: BORDER,
-    marginBottom: 16,
+    marginBottom: 8,
     overflow: 'hidden',
+  },
+  inputError: {
+    borderColor: ERROR,
   },
   prefixBox: {
     paddingHorizontal: 12,
@@ -235,7 +275,15 @@ const styles = StyleSheet.create({
     height: '100%',
   },
 
-  // Button — Figma: h=44, radius=8, #643ee8
+  errorText: {
+    color: ERROR,
+    fontSize: 12,
+    textAlign: 'left',
+    width: '100%',
+    marginBottom: 12,
+  },
+
+  // Button
   btn: {
     width: '100%',
     height: 44,
@@ -243,6 +291,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 4,
   },
   btnDisabled: { backgroundColor: '#B9C0C9' },
   btnText: { color: WHITE, fontSize: 16, fontWeight: '700' },

@@ -92,6 +92,37 @@ export const logoutUser = createAsyncThunk(
   }
 );
 
+/**
+ * driverLogin — POST /auth/driver-login { phone, passcode }
+ * On success: sets tokens + user in Redux (same shape as verifyOTP).
+ * On wrong passcode: rejects with { code: 'WRONG_PASSCODE', attemptsRemaining }.
+ * On lockout:        rejects with { code: 'LOCKED', lockedUntil }.
+ */
+export const driverLogin = createAsyncThunk(
+  'auth/driverLogin',
+  async ({ phone, passcode }, { rejectWithValue }) => {
+    try {
+      const response = await authService.driverLogin(phone, passcode);
+      const token = response.data?.data?.accessToken;
+      if (token) {
+        setAuthToken(token);
+        persistToken(token);
+      }
+      return response.data;
+    } catch (error) {
+      const status = error.response?.status;
+      const data = error.response?.data;
+      if (status === 423) {
+        return rejectWithValue({ code: 'LOCKED', lockedUntil: data?.lockedUntil, message: data?.message });
+      }
+      if (status === 401) {
+        return rejectWithValue({ code: 'WRONG_PASSCODE', attemptsRemaining: data?.attemptsRemaining, message: data?.message });
+      }
+      return rejectWithValue({ code: 'ERROR', message: getAuthAxiosErrorMessage(error, 'Login failed') });
+    }
+  }
+);
+
 export const fetchProfile = createAsyncThunk(
   'auth/fetchProfile',
   async (_, { rejectWithValue }) => {
@@ -117,6 +148,10 @@ const authSlice = createSlice({
     needsOnboarding: false,
     isLoading: false,
     error: null,
+    // Set when admin resets passcode and backend returns SESSION_EXPIRED on token refresh.
+    // Values: null | 'admin_reset' | 'passcode_expired'
+    // AuthNavigator shows SessionExpiredScreen as initial route when non-null.
+    sessionExpiredSource: null,
   },
   reducers: {
     setUser: (state, action) => {
@@ -143,9 +178,32 @@ const authSlice = createSlice({
       state.pendingRole = null;
       state.isAuthenticated = false;
       state.error = null;
+      state.sessionExpiredSource = null;
+    },
+    /**
+     * Dispatched by the Axios interceptor when a 401 with code SESSION_EXPIRED
+     * is received. Clears auth state and sets sessionExpiredSource so the
+     * AuthNavigator shows SessionExpiredScreen instead of the standard login.
+     */
+    setSessionExpired: (state, action) => {
+      state.user = null;
+      state.token = null;
+      state.role = null;
+      state.pendingRole = null;
+      state.isAuthenticated = false;
+      state.error = null;
+      state.sessionExpiredSource = action.payload || 'admin_reset';
     },
     clearError: (state) => {
       state.error = null;
+    },
+    /**
+     * Clears sessionExpiredSource once the driver acknowledges the
+     * SessionExpiredScreen and taps "Log In". Allows AuthNavigator to
+     * use Splash as its initial route on subsequent launches.
+     */
+    clearSessionExpired: (state) => {
+      state.sessionExpiredSource = null;
     },
     updateUser: (state, action) => {
       if (state.user && action.payload) {
@@ -217,6 +275,25 @@ const authSlice = createSlice({
         state.error = action.payload;
       })
 
+      // driverLogin — passcode-based auth
+      .addCase(driverLogin.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(driverLogin.fulfilled, (state, action) => {
+        state.isLoading = false;
+        const data = action.payload?.data || action.payload;
+        state.user = data?.user || null;
+        state.token = data?.accessToken || null;
+        state.role = data?.user?.roleName || 'driver';
+        state.isAuthenticated = !!(data?.accessToken);
+        state.sessionExpiredSource = null;
+      })
+      .addCase(driverLogin.rejected, (state) => {
+        // Error details handled in the screen (attemptsRemaining, LOCKED code, etc.)
+        state.isLoading = false;
+      })
+
       .addCase(logoutUser.fulfilled, (state) => {
         state.user = null;
         state.token = null;
@@ -247,5 +324,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { setUser, setToken, setRole, setPendingRole, completeOnboarding, logout, clearError, updateUser } = authSlice.actions;
+export const { setUser, setToken, setRole, setPendingRole, completeOnboarding, logout, clearError, updateUser, setSessionExpired, clearSessionExpired } = authSlice.actions;
 export default authSlice.reducer;

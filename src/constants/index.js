@@ -58,6 +58,9 @@ export const SCREENS = {
   LOGIN: 'Login',
   DRIVER_LOGIN: 'DriverLogin',
   OTP_VERIFICATION: 'OTPVerification',
+  DRIVER_PASSCODE: 'DriverPasscode',
+  DRIVER_LOCKOUT: 'DriverLockout',
+  SESSION_EXPIRED: 'SessionExpired',
 
   // Tabs (shared)
   HOME_TAB: 'HomeTab',
